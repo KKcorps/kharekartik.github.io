@@ -1,0 +1,21 @@
+---
+import PostPreview from '../../components/PostPreview.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { getPosts } from '../../lib/content';
+
+const posts = await getPosts();
+---
+
+<SiteLayout title="Writing" description="Technical writeups, build logs, and project notes.">
+	<section class="page-intro">
+		<p class="eyebrow">Writing archive</p>
+		<h1>Posts, ordered newest first.</h1>
+		<p>Build notes, systems writing, and project logs.</p>
+	</section>
+
+	<section class="section">
+		<div class="entry-stack">
+			{posts.map((post) => <PostPreview post={post} />)}
+		</div>
+	</section>
+</SiteLayout>

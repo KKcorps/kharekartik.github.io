@@ -1,0 +1,29 @@
+{
+  "name": "mywebsite",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "astro": "astro",
+    "import:medium": "node scripts/import-medium.mjs"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/press-start-2p": "^5.2.7",
+    "@fontsource/silkscreen": "^5.2.8",
+    "astro": "^6.1.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@types/node": "^25.5.0",
+    "turndown": "^7.2.2",
+    "typescript": "^5.9.3"
+  }
+}

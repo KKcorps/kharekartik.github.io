@@ -1,0 +1,21 @@
+---
+import ProjectPreview from '../../components/ProjectPreview.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { getProjects } from '../../lib/content';
+
+const projects = await getProjects();
+---
+
+<SiteLayout title="Projects" description="Selected projects, experiments, and tools.">
+	<section class="page-intro">
+		<p class="eyebrow">Project shelf</p>
+		<h1>Projects worth keeping on the shelf.</h1>
+		<p>Short entries with links back to the writing.</p>
+	</section>
+
+	<section class="section">
+		<div class="project-grid project-grid--archive">
+			{projects.map((project) => <ProjectPreview project={project} />)}
+		</div>
+	</section>
+</SiteLayout>

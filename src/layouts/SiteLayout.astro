@@ -1,0 +1,86 @@
+---
+import ThemeToggle from '../components/ThemeToggle.astro';
+import '../styles/global.css';
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const siteName = 'Kartik Khare';
+const defaultDescription =
+	'Writeups about side projects, ongoing experiments, and the systems details worth keeping.';
+const { title, description = defaultDescription } = Astro.props;
+const pageTitle = title ? `${title} | ${siteName}` : `${siteName} | Build notes and project writeups`;
+const pathname = Astro.url.pathname;
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+
+const navItems = [
+	{ href: '/', label: 'Home', match: pathname === '/' },
+	{ href: '/writing/', label: 'Writing', match: pathname.startsWith('/writing/') },
+	{ href: '/projects/', label: 'Projects', match: pathname.startsWith('/projects/') },
+];
+
+const year = new Date().getFullYear();
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="generator" content={Astro.generator} />
+		<meta name="description" content={description} />
+		<link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+		<link rel="icon" href={`${import.meta.env.BASE_URL}favicon.ico`} />
+		<title>{pageTitle}</title>
+		<script is:inline>
+			(() => {
+				const storageKey = 'theme-preference';
+				const root = document.documentElement;
+				const storedTheme = localStorage.getItem(storageKey);
+				const preferredTheme = storedTheme || 'dark';
+
+				root.dataset.theme = preferredTheme;
+				root.style.colorScheme = preferredTheme;
+			})();
+		</script>
+	</head>
+	<body>
+		<div class="site-backdrop" aria-hidden="true">
+			<div class="site-backdrop__glow"></div>
+			<div class="site-backdrop__scanline"></div>
+		</div>
+
+		<header class="site-header">
+			<a class="site-header__brand" href={import.meta.env.BASE_URL}>
+				<span class="site-header__brand-title">{siteName}</span>
+				<span class="site-header__brand-note">build notes / project logs</span>
+			</a>
+
+			<nav class="site-nav" aria-label="Primary">
+				{
+					navItems.map((item) => (
+						<a class={item.match ? 'is-active' : undefined} href={withBase(item.href)}>
+							{item.label}
+						</a>
+					))
+				}
+			</nav>
+
+			<ThemeToggle />
+		</header>
+
+		<main class="site-main">
+			<slot />
+		</main>
+
+		<footer class="site-footer">
+			<p class="site-footer__brand">KK // BUILD NOTES</p>
+			<div class="site-footer__status">
+				<span class="site-footer__dot" aria-hidden="true"></span>
+				<span>ACTIVE // {year}</span>
+			</div>
+		</footer>
+	</body>
+</html>

@@ -1,0 +1,35 @@
+---
+import PostPreview from '../components/PostPreview.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { getPosts } from '../lib/content';
+
+const posts = await getPosts();
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+---
+
+<SiteLayout
+	title="Writing"
+	description="Technical notes and project writeups from Kartik Khare."
+>
+	<section class="home-top">
+		<div class="home-top__bar">
+			<p class="eyebrow">Writing</p>
+			<a class="section-link" href={withBase('/projects/')}>Projects</a>
+		</div>
+		<div class="px-divider"></div>
+		<div class="home-top__intro">
+			<h1>
+				Recent<br />
+				posts.<span class="cursor" aria-hidden="true"></span>
+			</h1>
+			<p>Notes from projects, systems, and experiments.</p>
+			<p class="post-count">{posts.length} entries found</p>
+		</div>
+	</section>
+
+	<section class="section section--feed post-list">
+		<div class="entry-stack post-list__items">
+			{posts.map((post) => <PostPreview post={post} compact />)}
+		</div>
+	</section>
+</SiteLayout>

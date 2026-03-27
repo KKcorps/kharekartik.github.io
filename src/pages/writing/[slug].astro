@@ -1,0 +1,99 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { formatLongDate, getPosts } from '../../lib/content';
+
+export async function getStaticPaths() {
+	const posts = await getCollection('posts', ({ data }) => !data.draft);
+
+	return posts.map((post) => ({
+		params: { slug: post.id },
+		props: { post },
+	}));
+}
+
+interface Props {
+	post: CollectionEntry<'posts'>;
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const posts = await getPosts();
+const currentIndex = posts.findIndex((entry) => entry.id === post.id);
+const newerPost = currentIndex > 0 ? posts[currentIndex - 1] : undefined;
+const olderPost = currentIndex >= 0 && currentIndex < posts.length - 1 ? posts[currentIndex + 1] : undefined;
+const readTimeMinutes = Math.max(
+	1,
+	Math.round((post.body ?? '').split(/\s+/).filter(Boolean).length / 220),
+);
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+---
+
+<SiteLayout title={post.data.title} description={post.data.summary}>
+	<div class="reading-progress" aria-hidden="true">
+		<div class="reading-progress__bar" data-reading-progress></div>
+	</div>
+
+	<article class="article-shell article-shell--writing">
+		<a class="back" href={withBase('/writing/')}>Back to writing</a>
+
+		<header class="post-header">
+			<h1 class="article-title">{post.data.title}</h1>
+			<p class="post-sub">{post.data.summary}</p>
+			<div class="post-meta">
+				<span>{formatLongDate(post.data.publishedOn).toUpperCase()}</span>
+				<span class="sep">/</span>
+				<span>{readTimeMinutes} MIN READ</span>
+			</div>
+		</header>
+
+		<div class="divider"></div>
+
+		<div class="article-body article-body--writing" data-reading-article>
+			<Content />
+		</div>
+
+		<footer class="post-footer">
+			{
+				olderPost ? (
+					<a class="prev" href={withBase(`/writing/${olderPost.id}/`)}>Older post</a>
+				) : (
+					<span></span>
+				)
+			}
+			{
+				newerPost ? (
+					<a class="next" href={withBase(`/writing/${newerPost.id}/`)}>Newer post</a>
+				) : (
+					<span></span>
+				)
+			}
+		</footer>
+	</article>
+
+	<script is:inline>
+		(() => {
+			const bar = document.querySelector('[data-reading-progress]');
+			const article = document.querySelector('[data-reading-article]');
+
+			if (!(bar instanceof HTMLElement) || !(article instanceof HTMLElement)) {
+				return;
+			}
+
+			const updateProgress = () => {
+				const articleTop = article.offsetTop;
+				const articleHeight = article.offsetHeight;
+				const viewportHeight = window.innerHeight;
+				const scrolled = window.scrollY - articleTop;
+				const track = Math.max(articleHeight - viewportHeight, 1);
+				const progress = Math.max(0, Math.min((scrolled / track) * 100, 100));
+
+				bar.style.width = `${progress}%`;
+			};
+
+			updateProgress();
+			window.addEventListener('scroll', updateProgress, { passive: true });
+			window.addEventListener('resize', updateProgress);
+		})();
+	</script>
+</SiteLayout>

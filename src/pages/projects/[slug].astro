@@ -1,0 +1,62 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { formatMonthYear } from '../../lib/content';
+
+export async function getStaticPaths() {
+	const projects = await getCollection('projects', ({ data }) => !data.draft);
+
+	return projects.map((project) => ({
+		params: { slug: project.id },
+		props: { project },
+	}));
+}
+
+interface Props {
+	project: CollectionEntry<'projects'>;
+}
+
+const { project } = Astro.props;
+const { Content } = await render(project);
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+---
+
+<SiteLayout title={project.data.title} description={project.data.summary}>
+	<article class="article-shell article-shell--project">
+		<a class="article-back" href={withBase('/projects/')}>&larr; Back to projects</a>
+
+		<header class="article-header">
+			<p class="eyebrow">Project</p>
+			<h1>{project.data.title}</h1>
+			<p class="article-header__summary">{project.data.summary}</p>
+
+			<div class="project-facts">
+				<div class="project-fact">
+					<p class="project-fact__label">Status</p>
+					<p class="project-fact__value">{project.data.status}</p>
+				</div>
+				<div class="project-fact">
+					<p class="project-fact__label">Started</p>
+					<p class="project-fact__value">{formatMonthYear(project.data.startedOn)}</p>
+				</div>
+				<div class="project-fact">
+					<p class="project-fact__label">Stack</p>
+					<p class="project-fact__value">{project.data.stack.join(', ')}</p>
+				</div>
+			</div>
+
+			{
+				(project.data.repo || project.data.demo) && (
+					<div class="article-meta article-meta--links">
+						{project.data.repo && <a href={project.data.repo}>Repository</a>}
+						{project.data.demo && <a href={project.data.demo}>Live demo</a>}
+					</div>
+				)
+			}
+		</header>
+
+		<div class="article-body">
+			<Content />
+		</div>
+	</article>
+</SiteLayout>

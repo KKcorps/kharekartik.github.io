@@ -1,0 +1,47 @@
+<button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle color theme">
+	<span class="theme-toggle__label">mode</span>
+	<span class="theme-toggle__value" data-theme-label>dark</span>
+</button>
+
+<script is:inline>
+	(() => {
+		const storageKey = 'theme-preference';
+
+		const syncThemeLabel = (theme) => {
+			const label = document.querySelector('[data-theme-label]');
+
+			if (label instanceof HTMLElement) {
+				label.textContent = theme;
+			}
+		};
+
+		const applyTheme = (theme) => {
+			document.documentElement.dataset.theme = theme;
+			document.documentElement.style.colorScheme = theme;
+			localStorage.setItem(storageKey, theme);
+			syncThemeLabel(theme);
+		};
+
+		const attachThemeToggle = () => {
+			const button = document.querySelector('[data-theme-toggle]');
+
+			if (!(button instanceof HTMLButtonElement) || button.dataset.ready === 'true') {
+				return;
+			}
+
+			button.dataset.ready = 'true';
+			syncThemeLabel(document.documentElement.dataset.theme || 'dark');
+
+			button.addEventListener('click', () => {
+				const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+				applyTheme(nextTheme);
+			});
+		};
+
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', attachThemeToggle, { once: true });
+		} else {
+			attachThemeToggle();
+		}
+	})();
+</script>

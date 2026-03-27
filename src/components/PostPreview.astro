@@ -1,0 +1,41 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { formatShortDate, formatSplitDate } from '../lib/content';
+
+interface Props {
+	post: CollectionEntry<'posts'>;
+	compact?: boolean;
+}
+
+const { post, compact = false } = Astro.props;
+const visibleTags = compact ? post.data.tags.slice(0, 3) : post.data.tags;
+const taxonomy = visibleTags.length > 0 ? visibleTags.join(' / ') : 'build notes';
+const href = `${import.meta.env.BASE_URL}${`writing/${post.id}/`.replace(/^\//, '')}`;
+const splitDate = formatSplitDate(post.data.publishedOn);
+---
+
+{
+	compact ? (
+		<a class="post-item" href={href}>
+			<p class="post-date">
+				<span>{splitDate.monthDay}</span>
+				<span>{splitDate.year}</span>
+			</p>
+			<div class="post-center">
+				<h3 class="post-title">{post.data.title}</h3>
+				<p class="post-arrow">▶ Read</p>
+			</div>
+		</a>
+	) : (
+		<article class="entry-preview">
+			<p class="entry-preview__date">{formatShortDate(post.data.publishedOn)}</p>
+			<div class="entry-preview__body">
+				<h3>
+					<a href={href}>{post.data.title}</a>
+				</h3>
+				<p class="entry-preview__summary">{post.data.summary}</p>
+			</div>
+			<p class="entry-preview__taxonomy">{taxonomy}</p>
+		</article>
+	)
+}
