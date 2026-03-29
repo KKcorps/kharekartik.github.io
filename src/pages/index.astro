@@ -85,15 +85,6 @@ const postsByYear = Array.from(
 		<header class="terminal-header">
 			<div class="header-inner">
 				<div class="header-left">
-					<div class="shell-prompt" aria-hidden="true">
-						<span class="prompt-user">kartik</span>
-						<span class="prompt-at">@</span>
-						<span class="prompt-host">site</span>
-						<span class="prompt-sep">:</span>
-						<span class="prompt-path">~/posts</span>
-						<span class="prompt-dollar">$</span>
-					</div>
-
 					<div class="site-id">
 						<h1 class="site-name">
 							kartik khare<span class="name-cursor" aria-hidden="true"></span>
@@ -101,30 +92,30 @@ const postsByYear = Array.from(
 
 						<nav aria-label="Primary">
 							<ul class="main-nav">
-								<li><a href={withBase('/writing/')}>writing</a></li>
-								<li><a href={withBase('/projects/')}>projects</a></li>
 								<li><a href="mailto:kharekartik@gmail.com">about</a></li>
 							</ul>
 						</nav>
 					</div>
 
-					<p class="site-desc">systems notes, field experiments, writeups from the late shift.</p>
+					<div class="header-bottom">
+						<p class="site-desc">systems notes, field experiments, writeups from the late shift.</p>
 
-					<div class="header-meta">
-						<div class="status">
-							<div class="dot"></div>
-							<span id="status-text">online</span>
+						<div class="header-meta">
+							<div class="status">
+								<div class="dot"></div>
+								<span id="status-text">online</span>
+							</div>
+
+							<button
+								class="home-theme-toggle"
+								type="button"
+								id="home-theme-toggle"
+								aria-label="Toggle color theme"
+							>
+								<span class="home-theme-toggle__label">theme</span>
+								<span class="home-theme-toggle__value" id="home-theme-label">dark</span>
+							</button>
 						</div>
-
-						<button
-							class="home-theme-toggle"
-							type="button"
-							id="home-theme-toggle"
-							aria-label="Toggle color theme"
-						>
-							<span class="home-theme-toggle__label">theme</span>
-							<span class="home-theme-toggle__value" id="home-theme-label">dark</span>
-						</button>
 					</div>
 				</div>
 
@@ -137,6 +128,15 @@ const postsByYear = Array.from(
 		</header>
 
 		<main>
+			<div class="shell-prompt" aria-hidden="true">
+				<span class="prompt-user">kartik</span>
+				<span class="prompt-at">@</span>
+				<span class="prompt-host">site</span>
+				<span class="prompt-sep">:</span>
+				<span class="prompt-path">~/posts</span>
+				<span class="prompt-dollar">$</span>
+			</div>
+
 			<div class="ls-header">
 				<span class="cmd">ls</span>
 				<span>
@@ -959,7 +959,7 @@ const postsByYear = Array.from(
 
 		.header-inner {
 			display: flex;
-			align-items: flex-start;
+			align-items: stretch;
 			justify-content: space-between;
 			gap: 32px;
 		}
@@ -967,6 +967,8 @@ const postsByYear = Array.from(
 		.header-left {
 			flex: 1;
 			min-width: 0;
+			display: flex;
+			flex-direction: column;
 		}
 
 		.shell-prompt {
@@ -1056,6 +1058,10 @@ const postsByYear = Array.from(
 		.main-nav a:hover,
 		.footer-links a:hover {
 			color: var(--home-accent);
+		}
+
+		.header-bottom {
+			margin-top: auto;
 		}
 
 		.site-desc {
