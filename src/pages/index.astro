@@ -73,6 +73,7 @@ const postsByYear = Array.from(
 			const accent = accentPalettes[cycleIndex][theme];
 
 			localStorage.setItem(accentCycleKey, String(cycleIndex));
+			localStorage.setItem('home-accent-palette', JSON.stringify(accentPalettes[cycleIndex]));
 			applyAccentVars(accent);
 		})();
 	</script>
