@@ -31,6 +31,67 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 ---
 
 <SiteLayout title={post.data.title} description={post.data.summary} hideChrome bodyClass="article-page">
+
+	<script is:inline>
+		(() => {
+			const accentCycleKey = 'home-accent-cycle-index';
+			const accentPaletteKey = 'home-accent-palette';
+			const root = document.documentElement;
+			const theme = root.dataset.theme === 'light' ? 'light' : 'dark';
+			const parseHexToRgb = (hex) => {
+				const normalized = hex.replace('#', '').trim();
+				if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+					return null;
+				}
+
+				const red = Number.parseInt(normalized.slice(0, 2), 16);
+				const green = Number.parseInt(normalized.slice(2, 4), 16);
+				const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+				return `${red} ${green} ${blue}`;
+			};
+			const accentPalettes = [
+				{ dark: { hex: '#00e5ff', glow: 'rgba(0,229,255,0.25)', dim: 'rgba(0,229,255,0.12)' }, light: { hex: '#0b82a8', glow: 'rgba(11,130,168,0.2)', dim: 'rgba(11,130,168,0.14)' } },
+				{ dark: { hex: '#00ffc8', glow: 'rgba(0,255,200,0.24)', dim: 'rgba(0,255,200,0.1)' }, light: { hex: '#0c8a6a', glow: 'rgba(12,138,106,0.18)', dim: 'rgba(12,138,106,0.12)' } },
+				{ dark: { hex: '#ff7a1a', glow: 'rgba(255,122,26,0.24)', dim: 'rgba(255,122,26,0.1)' }, light: { hex: '#cc5a2f', glow: 'rgba(204,90,47,0.18)', dim: 'rgba(204,90,47,0.12)' } },
+				{ dark: { hex: '#9d7dff', glow: 'rgba(157,125,255,0.24)', dim: 'rgba(157,125,255,0.1)' }, light: { hex: '#8e4ec6', glow: 'rgba(142,78,198,0.2)', dim: 'rgba(142,78,198,0.14)' } },
+				{ dark: { hex: '#c5ff47', glow: 'rgba(197,255,71,0.22)', dim: 'rgba(197,255,71,0.1)' }, light: { hex: '#8b6f16', glow: 'rgba(139,111,22,0.18)', dim: 'rgba(139,111,22,0.12)' } },
+				{ dark: { hex: '#ff5a6f', glow: 'rgba(255,90,111,0.24)', dim: 'rgba(255,90,111,0.1)' }, light: { hex: '#bf3f4f', glow: 'rgba(191,63,79,0.2)', dim: 'rgba(191,63,79,0.12)' } },
+				{ dark: { hex: '#7be7ff', glow: 'rgba(123,231,255,0.24)', dim: 'rgba(123,231,255,0.1)' }, light: { hex: '#3c7f96', glow: 'rgba(60,127,150,0.2)', dim: 'rgba(60,127,150,0.12)' } },
+				{ dark: { hex: '#9cff57', glow: 'rgba(156,255,87,0.22)', dim: 'rgba(156,255,87,0.1)' }, light: { hex: '#658d20', glow: 'rgba(101,141,32,0.18)', dim: 'rgba(101,141,32,0.12)' } },
+				{ dark: { hex: '#ffb347', glow: 'rgba(255,179,71,0.22)', dim: 'rgba(255,179,71,0.1)' }, light: { hex: '#a56d16', glow: 'rgba(165,109,22,0.18)', dim: 'rgba(165,109,22,0.12)' } },
+				{ dark: { hex: '#d17cff', glow: 'rgba(209,124,255,0.24)', dim: 'rgba(209,124,255,0.1)' }, light: { hex: '#9d56bb', glow: 'rgba(157,86,187,0.2)', dim: 'rgba(157,86,187,0.12)' } },
+				{ dark: { hex: '#ff8b7b', glow: 'rgba(255,139,123,0.24)', dim: 'rgba(255,139,123,0.1)' }, light: { hex: '#c66556', glow: 'rgba(198,101,86,0.2)', dim: 'rgba(198,101,86,0.12)' } },
+				{ dark: { hex: '#52ffc1', glow: 'rgba(82,255,193,0.24)', dim: 'rgba(82,255,193,0.1)' }, light: { hex: '#1f8b6c', glow: 'rgba(31,139,108,0.2)', dim: 'rgba(31,139,108,0.12)' } },
+				{ dark: { hex: '#4fa3ff', glow: 'rgba(79,163,255,0.24)', dim: 'rgba(79,163,255,0.1)' }, light: { hex: '#2b69b3', glow: 'rgba(43,105,179,0.2)', dim: 'rgba(43,105,179,0.12)' } },
+				{ dark: { hex: '#ff6bb5', glow: 'rgba(255,107,181,0.24)', dim: 'rgba(255,107,181,0.1)' }, light: { hex: '#b64b80', glow: 'rgba(182,75,128,0.2)', dim: 'rgba(182,75,128,0.12)' } },
+				{ dark: { hex: '#ffd84d', glow: 'rgba(255,216,77,0.22)', dim: 'rgba(255,216,77,0.1)' }, light: { hex: '#9f7e10', glow: 'rgba(159,126,16,0.18)', dim: 'rgba(159,126,16,0.12)' } },
+				{ dark: { hex: '#30e0a1', glow: 'rgba(48,224,161,0.24)', dim: 'rgba(48,224,161,0.1)' }, light: { hex: '#24775c', glow: 'rgba(36,119,92,0.2)', dim: 'rgba(36,119,92,0.12)' } },
+				{ dark: { hex: '#7f8cff', glow: 'rgba(127,140,255,0.24)', dim: 'rgba(127,140,255,0.1)' }, light: { hex: '#5a63b8', glow: 'rgba(90,99,184,0.2)', dim: 'rgba(90,99,184,0.12)' } },
+				{ dark: { hex: '#ff9e6d', glow: 'rgba(255,158,109,0.24)', dim: 'rgba(255,158,109,0.1)' }, light: { hex: '#bb7145', glow: 'rgba(187,113,69,0.2)', dim: 'rgba(187,113,69,0.12)' } },
+				{ dark: { hex: '#64ffd9', glow: 'rgba(100,255,217,0.24)', dim: 'rgba(100,255,217,0.1)' }, light: { hex: '#298a76', glow: 'rgba(41,138,118,0.2)', dim: 'rgba(41,138,118,0.12)' } },
+				{ dark: { hex: '#b89cff', glow: 'rgba(184,156,255,0.24)', dim: 'rgba(184,156,255,0.1)' }, light: { hex: '#7e66bb', glow: 'rgba(126,102,187,0.2)', dim: 'rgba(126,102,187,0.12)' } },
+				{ dark: { hex: '#ff4d57', glow: 'rgba(255,77,87,0.24)', dim: 'rgba(255,77,87,0.1)' }, light: { hex: '#a8353c', glow: 'rgba(168,53,60,0.2)', dim: 'rgba(168,53,60,0.12)' } },
+			];
+
+			const storedCycleIndex = Number.parseInt(localStorage.getItem(accentCycleKey) ?? '-1', 10);
+			const cycleIndex = Number.isFinite(storedCycleIndex)
+				? (storedCycleIndex + 1) % accentPalettes.length
+				: 0;
+			const palette = accentPalettes[cycleIndex];
+			const accent = palette[theme];
+			const accentRgb = parseHexToRgb(accent.hex);
+
+			localStorage.setItem(accentCycleKey, String(cycleIndex));
+			localStorage.setItem(accentPaletteKey, JSON.stringify(palette));
+
+			root.style.setProperty('--accent', accent.hex);
+			root.style.setProperty('--accent-dim', accent.dim);
+			if (accentRgb) {
+				root.style.setProperty('--accent-rgb', accentRgb);
+			}
+		})();
+	</script>
 	<div class="shell">
 		<nav class="article-nav">
 			<a href={withBase('/')} class="logo">kartik khare<span class="cursor-block"></span></a>
