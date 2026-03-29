@@ -1,0 +1,166 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+---
+
+<SiteLayout
+	title="About"
+	description="About Kartik, plus a tiny playable ASCII game."
+>
+	<section class="about-page">
+		<h1>About</h1>
+
+		<div class="about-copy">
+			<p>I’m Kartik.</p>
+
+			<p>
+				I work on distributed systems, data infrastructure, performance, AI, and whatever else
+				manages to hijack my brain hard enough to become a project.
+			</p>
+
+			<p>
+				I like software where the hard parts are actually hard: latency, scale, reliability,
+				correctness, weird production failures, and the endless comedy of a system behaving
+				perfectly in theory and then immediately acting possessed in real life.
+			</p>
+
+			<p>
+				A lot of my work has been around Apache Pinot and large-scale data systems. I care about
+				building things that are fast, clear, and real. Not fake-clean. Not abstraction-pilled.
+				Not “works in the demo” and then explodes the moment traffic shows up.
+			</p>
+
+			<p>
+				I’m also drawn to tools, explainers, and experiments that make dense ideas feel direct. I
+				like taking something that looks impossible, peeling back the nonsense, and turning it into
+				something you can actually reason about without needing to ascend into a higher state of
+				distributed-systems consciousness.
+			</p>
+
+			<p>
+				This site is where I write, build, and collect the artifacts. Deep dives, side quests,
+				technical notes, experiments, and occasional posts from whatever rabbit hole currently has
+				me in a chokehold.
+			</p>
+
+			<p>
+				The vibe here is simple: serious curiosity, good taste, real technical depth, and just
+				enough internet damage to keep things interesting.
+			</p>
+		</div>
+
+		<section class="ascii-game" aria-labelledby="ascii-game-title">
+			<div class="ascii-game__header">
+				<h2 id="ascii-game-title">ASCII DUNGEON: packet panic</h2>
+				<p>
+					Move <code>@</code> to <code>$</code>. Controls: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+					or arrow keys. Press <kbd>R</kbd> to reset.
+				</p>
+			</div>
+
+			<pre id="ascii-game-board" class="ascii-game__board" aria-live="polite"></pre>
+			<p id="ascii-game-status" class="ascii-game__status">Route the packet through the chaos.</p>
+		</section>
+	</section>
+
+	<script is:inline>
+		(() => {
+			const board = document.getElementById('ascii-game-board');
+			const status = document.getElementById('ascii-game-status');
+			if (!(board instanceof HTMLElement) || !(status instanceof HTMLElement)) {
+				return;
+			}
+
+			const map = [
+				'############################',
+				'#@....#......#.............#',
+				'#.##.#.####.#.#.#######.##.#',
+				'#....#....#.#.#.#.....#....#',
+				'####.####.#.#.#.#.###.####.#',
+				'#....#....#...#...#...#....#',
+				'#.####.###########.#.##.##.#',
+				'#......#.....#.....#....#..#',
+				'#.######.###.#.########.#.##',
+				'#........#...#......$...#..#',
+				'############################',
+			];
+
+			const rows = map.length;
+			const cols = map[0].length;
+			const player = { row: 1, col: 1 };
+			const start = { ...player };
+			const tile = (row, col) => map[row]?.[col] ?? '#';
+
+			const render = () => {
+				const output = map.map((line, row) =>
+					line
+						.split('')
+						.map((char, col) => {
+							if (row === player.row && col === player.col) return '@';
+							return char;
+						})
+						.join(''),
+				);
+				board.textContent = output.join('\n');
+			};
+
+			const setStatus = (message) => {
+				status.textContent = message;
+			};
+
+			const reset = () => {
+				player.row = start.row;
+				player.col = start.col;
+				setStatus('Route the packet through the chaos.');
+				render();
+			};
+
+			const tryMove = (dr, dc) => {
+				const nextRow = Math.min(rows - 1, Math.max(0, player.row + dr));
+				const nextCol = Math.min(cols - 1, Math.max(0, player.col + dc));
+				const nextTile = tile(nextRow, nextCol);
+				if (nextTile === '#') {
+					setStatus('Wall hit. Rerouting...');
+					return;
+				}
+				player.row = nextRow;
+				player.col = nextCol;
+				if (nextTile === '$') {
+					setStatus('Cache acquired. You win. Press R to run it back.');
+				} else {
+					setStatus('Packet moving...');
+				}
+				render();
+			};
+
+			document.addEventListener('keydown', (event) => {
+				const key = event.key.toLowerCase();
+				if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'r'].includes(key)) {
+					event.preventDefault();
+				}
+				switch (key) {
+					case 'arrowup':
+					case 'w':
+						tryMove(-1, 0);
+						break;
+					case 'arrowdown':
+					case 's':
+						tryMove(1, 0);
+						break;
+					case 'arrowleft':
+					case 'a':
+						tryMove(0, -1);
+						break;
+					case 'arrowright':
+					case 'd':
+						tryMove(0, 1);
+						break;
+					case 'r':
+						reset();
+						break;
+				}
+			});
+
+			render();
+		})();
+	</script>
+</SiteLayout>
