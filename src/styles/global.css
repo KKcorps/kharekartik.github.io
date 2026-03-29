@@ -1773,7 +1773,7 @@ body.article-page .site-main {
 }
 
 .article-page .breadcrumb .user {
-	color: #e8453c;
+	color: var(--accent);
 	font-weight: 700;
 }
 
@@ -1830,7 +1830,7 @@ body.article-page .site-main {
 }
 
 .article-page .prose > blockquote:first-child {
-	border-left: 2px solid #e8453c;
+	border-left: 2px solid var(--accent);
 	padding: 10px 16px;
 	margin-bottom: 36px;
 	font-size: 11px;
@@ -1847,7 +1847,7 @@ body.article-page .site-main {
 }
 
 .article-page .prose > blockquote:first-child a {
-	color: #e8453c;
+	color: var(--accent);
 	text-decoration: none;
 	opacity: 0.8;
 }
@@ -1882,7 +1882,7 @@ body.article-page .site-main {
 
 .article-page .prose h2::before {
 	content: '##';
-	color: #e8453c;
+	color: var(--accent);
 	font-size: 11px;
 }
 
@@ -1933,7 +1933,7 @@ body.article-page .site-main {
 }
 
 .article-page .prose blockquote {
-	border-left: 2px solid #e8453c;
+	border-left: 2px solid var(--accent);
 	padding: 2px 20px;
 	margin: 28px 0;
 	color: var(--article-muted);
