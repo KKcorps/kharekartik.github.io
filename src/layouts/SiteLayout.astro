@@ -19,6 +19,7 @@ const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^
 
 const navItems = [
 	{ href: '/', label: 'Home', match: pathname === '/' },
+	{ href: '/about/', label: 'About', match: pathname.startsWith('/about/') },
 	{ href: '/writing/', label: 'Writing', match: pathname.startsWith('/writing/') },
 	{ href: '/projects/', label: 'Projects', match: pathname.startsWith('/projects/') },
 ];
