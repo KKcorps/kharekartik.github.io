@@ -1,7 +1,7 @@
 ---
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import SiteLayout from '../../layouts/SiteLayout.astro';
-import { formatLongDate, getPosts } from '../../lib/content';
+import { getPosts } from '../../lib/content';
 
 export async function getStaticPaths() {
 	const posts = await getCollection('posts', ({ data }) => !data.draft);
@@ -27,73 +27,79 @@ const readTimeMinutes = Math.max(
 	Math.round((post.body ?? '').split(/\s+/).filter(Boolean).length / 220),
 );
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 ---
 
-<SiteLayout title={post.data.title} description={post.data.summary}>
-	<div class="reading-progress" aria-hidden="true">
-		<div class="reading-progress__bar" data-reading-progress></div>
-	</div>
+<SiteLayout title={post.data.title} description={post.data.summary} hideChrome bodyClass="article-page">
+	<div class="shell">
+		<nav class="article-nav">
+			<a href={withBase('/')} class="logo">kartik khare<span class="cursor-block"></span></a>
+			<a href={withBase('/about/')} class="nav-link">ABOUT</a>
+		</nav>
 
-	<article class="article-shell article-shell--writing">
-		<a class="back" href={withBase('/writing/')}>Back to writing</a>
+		<div class="article-gap" aria-hidden="true"></div>
+		<hr />
 
-		<header class="post-header">
+		<div class="breadcrumb">
+			<span class="user">kartik</span>@site:<a href={withBase('/writing/')}>~/posts</a>/<span class="active">{post.id}</span> $
+		</div>
+
+		<header class="article-header">
 			<h1 class="article-title">{post.data.title}</h1>
-			<p class="post-sub">{post.data.summary}</p>
-			<div class="post-meta">
-				<span>{formatLongDate(post.data.publishedOn).toUpperCase()}</span>
+			<div class="article-meta">
+				<span>{yyyyMmDd}</span>
 				<span class="sep">/</span>
-				<span>{readTimeMinutes} MIN READ</span>
+				<span>{readTimeMinutes} min read</span>
+				{post.data.tags.map((tag) => (
+					<>
+						<span class="sep">/</span>
+						<span class="tag">{tag}</span>
+					</>
+				))}
 			</div>
 		</header>
 
-		<div class="divider"></div>
+		<hr />
 
-		<div class="article-body article-body--writing" data-reading-article>
-			<Content />
-		</div>
+		<article class="article-body">
+			<div class="prose" data-reading-article>
+				<Content />
+			</div>
+		</article>
 
-		<footer class="post-footer">
+		<div class="post-nav">
 			{
 				olderPost ? (
-					<a class="prev" href={withBase(`/writing/${olderPost.id}/`)}>Older post</a>
+					<a href={withBase(`/writing/${olderPost.id}/`)}>
+						<div>
+							<span class="nav-label">← OLDER POST</span>
+							{olderPost.data.title}
+						</div>
+					</a>
 				) : (
 					<span></span>
 				)
 			}
 			{
 				newerPost ? (
-					<a class="next" href={withBase(`/writing/${newerPost.id}/`)}>Newer post</a>
+					<a href={withBase(`/writing/${newerPost.id}/`)}>
+						<div class="post-nav__right">
+							<span class="nav-label">NEWER POST →</span>
+							{newerPost.data.title}
+						</div>
+					</a>
 				) : (
 					<span></span>
 				)
 			}
+		</div>
+
+		<footer class="article-footer">
+			<nav class="footer-links">
+				<a href="https://medium.com/@kharekartik" target="_blank" rel="noreferrer">MEDIUM</a>
+				<a href="https://github.com/kharekartik" target="_blank" rel="noreferrer">GITHUB</a>
+				<a href="mailto:kharekartik@gmail.com">EMAIL</a>
+			</nav>
 		</footer>
-	</article>
-
-	<script is:inline>
-		(() => {
-			const bar = document.querySelector('[data-reading-progress]');
-			const article = document.querySelector('[data-reading-article]');
-
-			if (!(bar instanceof HTMLElement) || !(article instanceof HTMLElement)) {
-				return;
-			}
-
-			const updateProgress = () => {
-				const articleTop = article.offsetTop;
-				const articleHeight = article.offsetHeight;
-				const viewportHeight = window.innerHeight;
-				const scrolled = window.scrollY - articleTop;
-				const track = Math.max(articleHeight - viewportHeight, 1);
-				const progress = Math.max(0, Math.min((scrolled / track) * 100, 100));
-
-				bar.style.width = `${progress}%`;
-			};
-
-			updateProgress();
-			window.addEventListener('scroll', updateProgress, { passive: true });
-			window.addEventListener('resize', updateProgress);
-		})();
-	</script>
+	</div>
 </SiteLayout>
