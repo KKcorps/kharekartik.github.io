@@ -64,17 +64,12 @@ draft: false
 
 This repo includes `.github/workflows/deploy.yml` for GitHub Pages.
 
-- If the repo is a user site such as `username.github.io`, the site builds at `/`.
-- If the repo is a project site, the workflow sets `PUBLIC_BASE_PATH=/<repo-name>` before build so asset and route paths still work.
+- This site is configured for the custom domain `noslop.lol`.
+- Astro uses a root base path (`/`) for all builds so routes and assets resolve correctly on the custom domain.
 
-If you want to test the project-site path locally, run:
-
-```sh
-PUBLIC_BASE_PATH=/your-repo-name npm run build
-```
-
-Then preview with:
+If you want to test locally, run:
 
 ```sh
-PUBLIC_BASE_PATH=/your-repo-name npm run preview
+npm run build
+npm run preview
 ```
