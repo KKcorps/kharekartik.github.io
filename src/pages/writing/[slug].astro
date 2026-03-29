@@ -1,6 +1,7 @@
 ---
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import ThemeToggle from '../../components/ThemeToggle.astro';
 import { getPosts } from '../../lib/content';
 
 export async function getStaticPaths() {
@@ -95,7 +96,10 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 	<div class="shell">
 		<nav class="article-nav">
 			<a href={withBase('/')} class="logo">kartik khare<span class="cursor-block"></span></a>
-			<a href={withBase('/about/')} class="nav-link">ABOUT</a>
+			<div class="article-nav__actions">
+				<a href={withBase('/about/')} class="nav-link">ABOUT</a>
+				<ThemeToggle />
+			</div>
 		</nav>
 
 		<div class="article-gap" aria-hidden="true"></div>
