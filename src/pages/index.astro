@@ -431,30 +431,29 @@ const postsByYear = Array.from(
 				[7, 4],
 				[8, 3],
 			];
-			const frogPath = [
-				[9, 4],
-				[8, 4],
-				[7, 5],
-				[6, 4],
-				[5, 4],
-				[4, 5],
-				[3, 4],
-				[2, 5],
-				[1, 4],
-				[9, 4],
-			];
-			const barrelLoop = [7, 6, 5, 4, 3, 2, 1, 0, 9, 8];
-			const marioLoop = [
+			const tronBluePath = [
 				[8, 1],
 				[8, 2],
 				[8, 3],
-				[7, 3],
-				[6, 4],
-				[7, 5],
-				[8, 5],
 				[8, 4],
-				[8, 3],
-				[8, 2],
+				[7, 4],
+				[6, 4],
+				[5, 4],
+				[4, 4],
+				[3, 4],
+				[2, 4],
+			];
+			const tronOrangePath = [
+				[1, 8],
+				[1, 7],
+				[1, 6],
+				[1, 5],
+				[2, 5],
+				[3, 5],
+				[4, 5],
+				[5, 5],
+				[6, 5],
+				[7, 5],
 			];
 			const galagaDive = [
 				[2, 4],
@@ -471,17 +470,18 @@ const postsByYear = Array.from(
 			const arcadeArt = [
 				createArt(
 					'pac-man',
-					'pac-man tunnel chase',
+					'pac-man chase lane',
 					Array.from({ length: FRAME_COUNT }, (_, step) => {
 						const grid = buildGrid();
+						const pacCol = step;
+						const ghostCol = wrap(step + 5);
 
-						drawText(grid, 1, 1, '##  ##');
-						drawText(grid, 7, 2, '##  ##');
+						drawText(grid, 2, 1, '########');
+						drawText(grid, 6, 1, '########');
 						fillRow(grid, 4, '.');
 
-						setCell(grid, 4, step, step % 2 === 0 ? 'O' : 'C');
-						setCell(grid, 4, wrap(step - 3), 'M');
-						setCell(grid, 4, wrap(step + 4), '@');
+						setCell(grid, 4, pacCol, step % 2 === 0 ? 'C' : 'O');
+						setCell(grid, 4, ghostCol, 'G');
 
 						return serializeGrid(grid);
 					}),
@@ -591,43 +591,55 @@ const postsByYear = Array.from(
 					}),
 				),
 				createArt(
-					'frogger',
-					'frogger crossing traffic and logs',
+					'tron',
+					'tron light cycles duel',
 					Array.from({ length: FRAME_COUNT }, (_, step) => {
 						const grid = buildGrid();
+						const [blueRow, blueCol] = tronBluePath[step];
+						const [orangeRow, orangeCol] = tronOrangePath[step];
 
-						drawText(grid, 0, 0, '*  *  *  *');
-						drawWrappedText(grid, 2, step, '====');
-						drawWrappedText(grid, 3, -step - 1, '===');
-						drawWrappedText(grid, 4, step + 2, '====');
-						drawWrappedText(grid, 6, -step, '[=]');
-						drawWrappedText(grid, 7, step + 1, '<=>');
+						drawText(grid, 0, 0, '##########');
+						drawText(grid, 9, 0, '##########');
 
-						if (step === 9) {
-							setCell(grid, 0, 4, '@');
+						for (let trailStep = 0; trailStep < step; trailStep += 1) {
+							const [trailBlueRow, trailBlueCol] = tronBluePath[trailStep];
+							const [trailOrangeRow, trailOrangeCol] = tronOrangePath[trailStep];
+							setCell(grid, trailBlueRow, trailBlueCol, '=');
+							setCell(grid, trailOrangeRow, trailOrangeCol, '-');
 						}
 
-						const [frogRow, frogCol] = frogPath[step];
-						setCell(grid, frogRow, frogCol, '&');
+						setCell(grid, blueRow, blueCol, 'B');
+						setCell(grid, orangeRow, orangeCol, 'R');
 
 						return serializeGrid(grid);
 					}),
 				),
 				createArt(
-					'donkey-kong',
-					'donkey kong barrel jump',
+					'missile-command',
+					'missile command city defense',
 					Array.from({ length: FRAME_COUNT }, (_, step) => {
 						const grid = buildGrid();
-						const [marioRow, marioCol] = marioLoop[step];
+						const incomingLeftRow = step;
+						const incomingRightRow = step;
+						const incomingLeftCol = step;
+						const incomingRightCol = 9 - step;
 
-						setCell(grid, 0, 0, 'D');
-						setCell(grid, 0, 9, 'P');
-						drawText(grid, 2, 0, '==========');
-						drawText(grid, 5, 0, '==========');
-						drawColumn(grid, 4, 1, 7, 'H');
-						drawText(grid, 9, 0, '==========');
-						setCell(grid, 8, barrelLoop[step], 'O');
-						setCell(grid, marioRow, marioCol, 'M');
+						drawText(grid, 9, 0, '^ ^ ^ ^ ^ ');
+						drawText(grid, 8, 3, '[M]');
+
+						setCell(grid, incomingLeftRow, incomingLeftCol, '!');
+						setCell(grid, incomingRightRow, incomingRightCol, '!');
+
+						if (step >= 2 && step <= 7) {
+							setCell(grid, 8 - (step - 2), 4, '|');
+						}
+
+						if (step >= 5 && step <= 7) {
+							setCell(grid, 4, 4, '*');
+							setCell(grid, 4, 5, '*');
+							setCell(grid, 5, 4, '*');
+							setCell(grid, 5, 5, '*');
+						}
 
 						return serializeGrid(grid);
 					}),
