@@ -39,12 +39,47 @@ const year = new Date().getFullYear();
 		<script is:inline>
 			(() => {
 				const storageKey = 'theme-preference';
+				const accentPaletteKey = 'home-accent-palette';
 				const root = document.documentElement;
 				const storedTheme = localStorage.getItem(storageKey);
 				const preferredTheme = storedTheme || 'dark';
+				const parseHexToRgb = (hex) => {
+					const normalized = hex.replace('#', '').trim();
+					if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+						return null;
+					}
+
+					const red = Number.parseInt(normalized.slice(0, 2), 16);
+					const green = Number.parseInt(normalized.slice(2, 4), 16);
+					const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+					return `${red} ${green} ${blue}`;
+				};
 
 				root.dataset.theme = preferredTheme;
 				root.style.colorScheme = preferredTheme;
+
+				const storedPalette = localStorage.getItem(accentPaletteKey);
+				if (!storedPalette) {
+					return;
+				}
+
+				try {
+					const palette = JSON.parse(storedPalette);
+					const accent = preferredTheme === 'light' ? palette?.light : palette?.dark;
+					if (!accent?.hex || !accent?.dim) {
+						return;
+					}
+
+					root.style.setProperty('--accent', accent.hex);
+					root.style.setProperty('--accent-dim', accent.dim);
+					const accentRgb = parseHexToRgb(accent.hex);
+					if (accentRgb) {
+						root.style.setProperty('--accent-rgb', accentRgb);
+					}
+				} catch {
+					// ignore malformed localStorage values
+				}
 			})();
 		</script>
 	</head>
