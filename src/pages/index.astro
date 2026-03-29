@@ -4,7 +4,7 @@ import { getPosts } from '../lib/content';
 
 const posts = await getPosts();
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
-const formatIsoDate = (date: Date) => date.toISOString().slice(0, 10);
+const formatIsoDate = (date: Date) => date.toISOString().slice(5, 10);
 const postsByYear = Array.from(
 	posts.reduce((map, post) => {
 		const year = post.data.publishedOn.getUTCFullYear().toString();
@@ -86,37 +86,32 @@ const postsByYear = Array.from(
 		<header class="terminal-header">
 			<div class="header-inner">
 				<div class="header-left">
-					<div class="site-id">
-						<h1 class="site-name">
-							kartik khare<span class="name-cursor" aria-hidden="true"></span>
-						</h1>
+					<nav aria-label="Primary" class="site-id">
+						<ul class="main-nav">
+							<li class="site-name">
+								kartik khare<span class="name-cursor" aria-hidden="true"></span>
+							</li>
+							<li><a href="mailto:kharekartik@gmail.com">about</a></li>
+						</ul>
+					</nav>
 
-						<nav aria-label="Primary">
-							<ul class="main-nav">
-								<li><a href="mailto:kharekartik@gmail.com">about</a></li>
-							</ul>
-						</nav>
-					</div>
+					<p class="site-desc">systems notes,<wbr /> field experiments,<wbr /> writeups from the late shift.</p>
 
-					<div class="header-bottom">
-						<p class="site-desc">systems notes, field experiments, writeups from the late shift.</p>
-
-						<div class="header-meta">
-							<div class="status">
-								<div class="dot"></div>
-								<span id="status-text">online</span>
-							</div>
-
-							<button
-								class="home-theme-toggle"
-								type="button"
-								id="home-theme-toggle"
-								aria-label="Toggle color theme"
-							>
-								<span class="home-theme-toggle__label">theme</span>
-								<span class="home-theme-toggle__value" id="home-theme-label">dark</span>
-							</button>
+					<div class="header-meta">
+						<div class="status">
+							<div class="dot"></div>
+							<span id="status-text">online</span>
 						</div>
+
+						<button
+							class="home-theme-toggle"
+							type="button"
+							id="home-theme-toggle"
+							aria-label="Toggle color theme"
+						>
+							<span class="home-theme-toggle__label">theme</span>
+							<span class="home-theme-toggle__value" id="home-theme-label">dark</span>
+						</button>
 					</div>
 				</div>
 
@@ -130,20 +125,9 @@ const postsByYear = Array.from(
 
 		<main>
 			<section class="terminal-section">
-				<div class="shell-prompt" aria-hidden="true">
-					<span class="prompt-user">kartik</span>
-					<span class="prompt-at">@</span>
-					<span class="prompt-host">site</span>
-					<span class="prompt-sep">:</span>
-					<span class="prompt-path">~/posts</span>
-					<span class="prompt-dollar">$</span>
-				</div>
-
 				<div class="ls-header">
+					<span class="prompt-inline"><span class="prompt-user">kartik</span><span class="prompt-at">@</span><span class="prompt-host">site</span><span class="prompt-sep">:</span><span class="prompt-path">~/posts</span><span class="prompt-dollar">$</span></span>
 					<span class="cmd">ls</span>
-					<span>
-						posts/ <span class="entry-count">- {posts.length} entries</span>
-					</span>
 				</div>
 			</section>
 
@@ -175,7 +159,6 @@ const postsByYear = Array.from(
 		<footer class="terminal-footer">
 			<div class="footer-left">
 				<span class="footer-bug" id="footer-bug"></span>
-				<span>operator log // est. 2020</span>
 			</div>
 
 			<ul class="footer-links">
@@ -978,8 +961,8 @@ const postsByYear = Array.from(
 
 		.header-inner {
 			display: grid;
-			grid-template-columns: 1fr auto;
-			align-items: center;
+			grid-template-columns: minmax(0, 1fr) auto;
+			align-items: start;
 			gap: 48px;
 			padding: 56px 0 40px;
 		}
@@ -989,12 +972,6 @@ const postsByYear = Array.from(
 			min-width: 0;
 			display: flex;
 			flex-direction: column;
-		}
-
-		.shell-prompt {
-			display: flex;
-			align-items: center;
-			margin-bottom: 4px;
 		}
 
 		.prompt-user,
@@ -1031,11 +1008,7 @@ const postsByYear = Array.from(
 		}
 
 		.site-id {
-			display: flex;
-			align-items: baseline;
-			justify-content: space-between;
-			gap: 16px;
-			margin-bottom: 24px;
+			margin-bottom: 16px;
 		}
 
 		.site-name {
@@ -1080,10 +1053,6 @@ const postsByYear = Array.from(
 			color: var(--home-accent);
 		}
 
-		.header-bottom {
-			margin-top: auto;
-		}
-
 		.site-desc {
 			margin: 0;
 			font-family: var(--font-body);
@@ -1092,7 +1061,8 @@ const postsByYear = Array.from(
 			color: var(--home-text);
 			letter-spacing: 0.01em;
 			line-height: 1.5;
-			max-width: 480px;
+			max-width: 360px;
+			text-wrap: pretty;
 		}
 
 		.status {
@@ -1264,7 +1234,7 @@ const postsByYear = Array.from(
 		.ls-header {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 10px;
 			margin-bottom: 0;
 			padding-bottom: 0;
 			border-bottom: 0;
@@ -1279,8 +1249,8 @@ const postsByYear = Array.from(
 			color: var(--home-accent);
 		}
 
-		.entry-count {
-			color: var(--home-text-low);
+		.prompt-inline {
+			white-space: nowrap;
 		}
 
 		.posts-section {
@@ -1320,8 +1290,8 @@ const postsByYear = Array.from(
 		}
 
 		.year-sep::before {
-			content: '—';
-			color: var(--home-text-low);
+			content: '//';
+			color: #ff4d57;
 			letter-spacing: 0;
 		}
 
