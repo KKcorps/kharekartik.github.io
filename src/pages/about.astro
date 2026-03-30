@@ -1,166 +1,1276 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
+
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const year = new Date().getFullYear();
+const accentPalettes = [
+	{
+		dark: { hex: '#00e5ff', glow: 'rgba(0,229,255,0.25)', dim: 'rgba(0,229,255,0.12)' },
+		light: { hex: '#0b82a8', glow: 'rgba(11,130,168,0.2)', dim: 'rgba(11,130,168,0.14)' },
+	},
+	{
+		dark: { hex: '#00ffc8', glow: 'rgba(0,255,200,0.24)', dim: 'rgba(0,255,200,0.1)' },
+		light: { hex: '#0c8a6a', glow: 'rgba(12,138,106,0.18)', dim: 'rgba(12,138,106,0.12)' },
+	},
+	{
+		dark: { hex: '#ff7a1a', glow: 'rgba(255,122,26,0.24)', dim: 'rgba(255,122,26,0.1)' },
+		light: { hex: '#cc5a2f', glow: 'rgba(204,90,47,0.18)', dim: 'rgba(204,90,47,0.12)' },
+	},
+	{
+		dark: { hex: '#9d7dff', glow: 'rgba(157,125,255,0.24)', dim: 'rgba(157,125,255,0.1)' },
+		light: { hex: '#8e4ec6', glow: 'rgba(142,78,198,0.2)', dim: 'rgba(142,78,198,0.14)' },
+	},
+	{
+		dark: { hex: '#c5ff47', glow: 'rgba(197,255,71,0.22)', dim: 'rgba(197,255,71,0.1)' },
+		light: { hex: '#8b6f16', glow: 'rgba(139,111,22,0.18)', dim: 'rgba(139,111,22,0.12)' },
+	},
+	{
+		dark: { hex: '#ff5a6f', glow: 'rgba(255,90,111,0.24)', dim: 'rgba(255,90,111,0.1)' },
+		light: { hex: '#bf3f4f', glow: 'rgba(191,63,79,0.2)', dim: 'rgba(191,63,79,0.12)' },
+	},
+	{
+		dark: { hex: '#7be7ff', glow: 'rgba(123,231,255,0.24)', dim: 'rgba(123,231,255,0.1)' },
+		light: { hex: '#3c7f96', glow: 'rgba(60,127,150,0.2)', dim: 'rgba(60,127,150,0.12)' },
+	},
+	{
+		dark: { hex: '#9cff57', glow: 'rgba(156,255,87,0.22)', dim: 'rgba(156,255,87,0.1)' },
+		light: { hex: '#658d20', glow: 'rgba(101,141,32,0.18)', dim: 'rgba(101,141,32,0.12)' },
+	},
+	{
+		dark: { hex: '#ffb347', glow: 'rgba(255,179,71,0.22)', dim: 'rgba(255,179,71,0.1)' },
+		light: { hex: '#a56d16', glow: 'rgba(165,109,22,0.18)', dim: 'rgba(165,109,22,0.12)' },
+	},
+	{
+		dark: { hex: '#d17cff', glow: 'rgba(209,124,255,0.24)', dim: 'rgba(209,124,255,0.1)' },
+		light: { hex: '#9d56bb', glow: 'rgba(157,86,187,0.2)', dim: 'rgba(157,86,187,0.12)' },
+	},
+	{
+		dark: { hex: '#ff8b7b', glow: 'rgba(255,139,123,0.24)', dim: 'rgba(255,139,123,0.1)' },
+		light: { hex: '#c66556', glow: 'rgba(198,101,86,0.2)', dim: 'rgba(198,101,86,0.12)' },
+	},
+	{
+		dark: { hex: '#52ffc1', glow: 'rgba(82,255,193,0.24)', dim: 'rgba(82,255,193,0.1)' },
+		light: { hex: '#1f8b6c', glow: 'rgba(31,139,108,0.2)', dim: 'rgba(31,139,108,0.12)' },
+	},
+	{
+		dark: { hex: '#4fa3ff', glow: 'rgba(79,163,255,0.24)', dim: 'rgba(79,163,255,0.1)' },
+		light: { hex: '#2b69b3', glow: 'rgba(43,105,179,0.2)', dim: 'rgba(43,105,179,0.12)' },
+	},
+	{
+		dark: { hex: '#ff6bb5', glow: 'rgba(255,107,181,0.24)', dim: 'rgba(255,107,181,0.1)' },
+		light: { hex: '#b64b80', glow: 'rgba(182,75,128,0.2)', dim: 'rgba(182,75,128,0.12)' },
+	},
+	{
+		dark: { hex: '#ffd84d', glow: 'rgba(255,216,77,0.22)', dim: 'rgba(255,216,77,0.1)' },
+		light: { hex: '#9f7e10', glow: 'rgba(159,126,16,0.18)', dim: 'rgba(159,126,16,0.12)' },
+	},
+	{
+		dark: { hex: '#30e0a1', glow: 'rgba(48,224,161,0.24)', dim: 'rgba(48,224,161,0.1)' },
+		light: { hex: '#24775c', glow: 'rgba(36,119,92,0.2)', dim: 'rgba(36,119,92,0.12)' },
+	},
+	{
+		dark: { hex: '#7f8cff', glow: 'rgba(127,140,255,0.24)', dim: 'rgba(127,140,255,0.1)' },
+		light: { hex: '#5a63b8', glow: 'rgba(90,99,184,0.2)', dim: 'rgba(90,99,184,0.12)' },
+	},
+	{
+		dark: { hex: '#ff9e6d', glow: 'rgba(255,158,109,0.24)', dim: 'rgba(255,158,109,0.1)' },
+		light: { hex: '#bb7145', glow: 'rgba(187,113,69,0.2)', dim: 'rgba(187,113,69,0.12)' },
+	},
+	{
+		dark: { hex: '#64ffd9', glow: 'rgba(100,255,217,0.24)', dim: 'rgba(100,255,217,0.1)' },
+		light: { hex: '#298a76', glow: 'rgba(41,138,118,0.2)', dim: 'rgba(41,138,118,0.12)' },
+	},
+	{
+		dark: { hex: '#b89cff', glow: 'rgba(184,156,255,0.24)', dim: 'rgba(184,156,255,0.1)' },
+		light: { hex: '#7e66bb', glow: 'rgba(126,102,187,0.2)', dim: 'rgba(126,102,187,0.12)' },
+	},
+	{
+		dark: { hex: '#ff4d57', glow: 'rgba(255,77,87,0.24)', dim: 'rgba(255,77,87,0.1)' },
+		light: { hex: '#a8353c', glow: 'rgba(168,53,60,0.2)', dim: 'rgba(168,53,60,0.12)' },
+	},
+];
 ---
 
 <SiteLayout
 	title="About"
 	description="About Kartik, plus a tiny playable ASCII game."
+	hideChrome
+	bodyClass="about-terminal"
 >
-	<section class="about-page">
-		<h1>About</h1>
-
-		<div class="about-copy">
-			<p>I’m Kartik.</p>
-
-			<p>
-				I work on distributed systems, data infrastructure, performance, AI, and whatever else
-				manages to hijack my brain hard enough to become a project.
-			</p>
-
-			<p>
-				I like software where the hard parts are actually hard: latency, scale, reliability,
-				correctness, weird production failures, and the endless comedy of a system behaving
-				perfectly in theory and then immediately acting possessed in real life.
-			</p>
-
-			<p>
-				A lot of my work has been around Apache Pinot and large-scale data systems. I care about
-				building things that are fast, clear, and real. Not fake-clean. Not abstraction-pilled.
-				Not “works in the demo” and then explodes the moment traffic shows up.
-			</p>
-
-			<p>
-				I’m also drawn to tools, explainers, and experiments that make dense ideas feel direct. I
-				like taking something that looks impossible, peeling back the nonsense, and turning it into
-				something you can actually reason about without needing to ascend into a higher state of
-				distributed-systems consciousness.
-			</p>
-
-			<p>
-				This site is where I write, build, and collect the artifacts. Deep dives, side quests,
-				technical notes, experiments, and occasional posts from whatever rabbit hole currently has
-				me in a chokehold.
-			</p>
-
-			<p>
-				The vibe here is simple: serious curiosity, good taste, real technical depth, and just
-				enough internet damage to keep things interesting.
-			</p>
-		</div>
-
-		<section class="ascii-game" aria-labelledby="ascii-game-title">
-			<div class="ascii-game__header">
-				<h2 id="ascii-game-title">ASCII DUNGEON: packet panic</h2>
-				<p>
-					Move <code>@</code> to <code>$</code>. Controls: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
-					or arrow keys. Press <kbd>R</kbd> to reset.
-				</p>
-			</div>
-
-			<pre id="ascii-game-board" class="ascii-game__board" aria-live="polite"></pre>
-			<p id="ascii-game-status" class="ascii-game__status">Route the packet through the chaos.</p>
-		</section>
-	</section>
-
-	<script is:inline>
+	<script is:inline data-accent-palettes={JSON.stringify(accentPalettes)}>
 		(() => {
-			const board = document.getElementById('ascii-game-board');
-			const status = document.getElementById('ascii-game-status');
-			if (!(board instanceof HTMLElement) || !(status instanceof HTMLElement)) {
+			const accentCycleKey = 'home-accent-cycle-index';
+			const accentPaletteKey = 'home-accent-palette';
+			const root = document.documentElement;
+			const theme = root.dataset.theme === 'light' ? 'light' : 'dark';
+			const currentScript = document.currentScript;
+			const accentPalettes = JSON.parse(currentScript?.dataset.accentPalettes ?? '[]');
+			const parseHexToRgb = (hex) => {
+				const normalized = hex.replace('#', '').trim();
+				if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+					return null;
+				}
+
+				const red = Number.parseInt(normalized.slice(0, 2), 16);
+				const green = Number.parseInt(normalized.slice(2, 4), 16);
+				const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+				return `${red} ${green} ${blue}`;
+			};
+
+			if (!Array.isArray(accentPalettes) || accentPalettes.length === 0) {
 				return;
 			}
 
-			const map = [
-				'############################',
-				'#@....#......#.............#',
-				'#.##.#.####.#.#.#######.##.#',
-				'#....#....#.#.#.#.....#....#',
-				'####.####.#.#.#.#.###.####.#',
-				'#....#....#...#...#...#....#',
-				'#.####.###########.#.##.##.#',
-				'#......#.....#.....#....#..#',
-				'#.######.###.#.########.#.##',
-				'#........#...#......$...#..#',
-				'############################',
-			];
+			const storedCycleIndex = Number.parseInt(localStorage.getItem(accentCycleKey) ?? '-1', 10);
+			const cycleIndex = Number.isFinite(storedCycleIndex)
+				? (storedCycleIndex + 1) % accentPalettes.length
+				: 0;
+			const palette = accentPalettes[cycleIndex];
+			const accent = palette[theme];
+			const accentRgb = parseHexToRgb(accent.hex);
 
-			const rows = map.length;
-			const cols = map[0].length;
-			const player = { row: 1, col: 1 };
-			const start = { ...player };
-			const tile = (row, col) => map[row]?.[col] ?? '#';
+			localStorage.setItem(accentCycleKey, String(cycleIndex));
+			localStorage.setItem(accentPaletteKey, JSON.stringify(palette));
 
-			const render = () => {
-				const output = map.map((line, row) =>
-					line
-						.split('')
-						.map((char, col) => {
-							if (row === player.row && col === player.col) return '@';
-							return char;
-						})
-						.join(''),
+			root.style.setProperty('--accent', accent.hex);
+			root.style.setProperty('--accent-dim', accent.dim);
+			root.style.setProperty('--about-accent-glow', accent.glow);
+
+			if (accentRgb) {
+				root.style.setProperty('--accent-rgb', accentRgb);
+			}
+		})();
+	</script>
+
+	<div class="about-shell">
+		<header class="about-header">
+			<div class="about-header__left">
+				<div class="about-site-title">
+					<a href={withBase('/')} class="about-site-title__name">kartik khare</a>
+					<span class="about-cursor" aria-hidden="true"></span>
+					<nav class="about-site-nav" aria-label="Primary">
+						<a href={withBase('/')}>home</a>
+						<a href={withBase('/about/')} aria-current="page" class="is-active">about</a>
+					</nav>
+				</div>
+
+				<p class="about-tagline">
+					systems notes, field experiments, writeups<br />
+					from the late shift.
+				</p>
+
+				<div class="about-status-bar">
+					<span class="about-status-dot" aria-hidden="true"></span>
+					<span>late shift active</span>
+					<span class="about-status-pipe">|</span>
+					<span>theme <span class="about-status-value" data-about-theme>dark</span></span>
+					<span class="about-status-pipe">|</span>
+					<span>page <span class="about-status-value">about</span></span>
+				</div>
+			</div>
+
+			<div class="about-header__right">
+				<div class="about-grid-widget">
+					<canvas id="about-grid-canvas" width="170" height="170" aria-hidden="true"></canvas>
+				</div>
+			</div>
+		</header>
+
+		<div class="about-divider"></div>
+
+		<div class="about-terminal-prompt">
+			<div class="about-prompt-line">
+				<span class="about-prompt-user">kartik</span>
+				<span class="about-prompt-host">@site</span>
+				<span class="about-prompt-path">:~/about</span>
+				<span class="about-prompt-dollar">$</span>
+				<span class="about-prompt-command">cat bio.txt</span>
+			</div>
+		</div>
+
+		<section class="about-main">
+			<div class="about-body-column">
+				<div class="about-section-header">
+					<span class="about-section-slashes">//</span>
+					<span class="about-section-title">about</span>
+				</div>
+
+				<div class="about-bio-block">
+					<p>I'm Kartik.</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						I work on <span class="hl">distributed systems</span>, data infrastructure,
+						performance, AI, and whatever else manages to hijack my brain hard enough to
+						become a project.
+					</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						<em>I like software where the hard parts are actually hard:</em> latency, scale,
+						reliability, correctness, weird production failures, and the endless comedy of a
+						system behaving perfectly in theory and then immediately acting possessed in real
+						life.
+					</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						A lot of my work has been around <span class="hl">Apache Pinot</span> and
+						large-scale data systems. I care about building things that are fast, clear, and
+						real. Not fake-clean. Not abstraction-pilled. Not <em>"works in the demo"</em> and
+						then explodes the moment traffic shows up.
+					</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						I'm also drawn to tools, explainers, and experiments that make dense ideas feel
+						direct. I like taking something that looks impossible, peeling back the nonsense,
+						and turning it into something you can actually reason about without needing to
+						ascend into a higher state of distributed-systems consciousness.
+					</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						This site is where I write, build, and collect the artifacts.
+						<em>
+							Deep dives, side quests, technical notes, experiments, and occasional posts
+							from whatever rabbit hole currently has me in a chokehold.
+						</em>
+					</p>
+				</div>
+
+				<div class="about-bio-block">
+					<p>
+						The vibe here is simple: <span class="hl">serious curiosity</span>, good taste,
+						real technical depth, and just enough internet damage to keep things interesting.
+					</p>
+				</div>
+			</div>
+
+			<aside class="about-sidebar">
+				<div class="about-sidebar-block">
+					<div class="about-section-header">
+						<span class="about-section-slashes">//</span>
+						<span class="about-section-title">vitals</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">role</span>
+						<span class="about-sidebar-item__value">distributed systems engineer</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">employer</span>
+						<span class="about-sidebar-item__value">StarTree Technologies</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">location</span>
+						<span class="about-sidebar-item__value">Bengaluru, IN</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">open to</span>
+						<span class="about-sidebar-item__value">interesting problems</span>
+					</div>
+				</div>
+
+				<div class="about-sidebar-block">
+					<div class="about-section-header">
+						<span class="about-section-slashes">//</span>
+						<span class="about-section-title">stack</span>
+					</div>
+
+					<div class="about-tag-list">
+						<span class="about-tag">apache pinot</span>
+						<span class="about-tag">rocksdb</span>
+						<span class="about-tag">kafka</span>
+						<span class="about-tag">zookeeper</span>
+						<span class="about-tag">apache helix</span>
+						<span class="about-tag">java</span>
+						<span class="about-tag">distributed systems</span>
+						<span class="about-tag">lsm trees</span>
+					</div>
+				</div>
+
+				<div class="about-sidebar-block">
+					<div class="about-section-header">
+						<span class="about-section-slashes">//</span>
+						<span class="about-section-title">links</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">medium</span>
+						<span class="about-sidebar-item__value">
+							<a href="https://medium.com/@kharekartik" rel="noreferrer" target="_blank">
+								&rarr; @kharekartik
+							</a>
+						</span>
+					</div>
+
+					<div class="about-sidebar-item">
+						<span class="about-sidebar-item__label">github</span>
+						<span class="about-sidebar-item__value">
+							<a href="https://github.com/kharekartik" rel="noreferrer" target="_blank">
+								&rarr; github.com/kharekartik
+							</a>
+						</span>
+					</div>
+				</div>
+			</aside>
+		</section>
+
+		<section class="about-dungeon-section" aria-labelledby="packet-panic-title">
+			<div class="about-divider about-divider--tight"></div>
+
+			<div class="about-terminal-prompt about-terminal-prompt--tight">
+				<div class="about-prompt-line">
+					<span class="about-prompt-user">kartik</span>
+					<span class="about-prompt-host">@site</span>
+					<span class="about-prompt-path">:~/about</span>
+					<span class="about-prompt-dollar">$</span>
+					<span class="about-prompt-command">./packet_panic</span>
+				</div>
+			</div>
+
+			<div class="about-dungeon-layout">
+				<div
+					id="about-dungeon-display"
+					class="about-dungeon-display"
+					aria-live="polite"
+					aria-labelledby="packet-panic-title"
+					role="img"
+				></div>
+
+				<div class="about-dungeon-panel">
+					<div>
+						<div class="about-dungeon-panel__label">controls</div>
+						<div class="about-dpad" aria-label="Dungeon controls">
+							<div class="about-dpad__empty"></div>
+							<button class="about-dpad__button" id="about-btn-up" type="button">↑</button>
+							<div class="about-dpad__empty"></div>
+							<button class="about-dpad__button" id="about-btn-left" type="button">←</button>
+							<div class="about-dpad__empty"></div>
+							<button class="about-dpad__button" id="about-btn-right" type="button">→</button>
+							<div class="about-dpad__empty"></div>
+							<button class="about-dpad__button" id="about-btn-down" type="button">↓</button>
+							<div class="about-dpad__empty"></div>
+						</div>
+					</div>
+
+					<div>
+						<div class="about-dungeon-panel__label">legend</div>
+							<div class="about-dungeon-legend">
+								<div class="about-legend-row">
+									<span class="about-legend-char is-packet">@</span>
+									<span class="about-legend-desc">packet</span>
+								</div>
+							<div class="about-legend-row">
+								<span class="about-legend-char is-goal">$</span>
+								<span class="about-legend-desc">destination</span>
+							</div>
+							<div class="about-legend-row">
+								<span class="about-legend-char is-wall">#</span>
+								<span class="about-legend-desc">wall</span>
+							</div>
+							<div class="about-legend-row">
+								<span class="about-legend-char">.</span>
+								<span class="about-legend-desc">open path</span>
+							</div>
+						</div>
+					</div>
+
+					<p class="about-dungeon-status" id="about-dungeon-status">
+						route the packet<br />
+						through the chaos.
+					</p>
+
+					<button class="about-reset-button" id="about-reset-button" type="button">
+						[ r ] reset
+					</button>
+				</div>
+			</div>
+		</section>
+
+		<footer class="about-footer">
+			<span>kartik khare — late shift active</span>
+			<span>&copy; {year}</span>
+		</footer>
+	</div>
+
+	<script is:inline>
+		(() => {
+			const root = document.documentElement;
+			const themeValue = document.querySelector('[data-about-theme]');
+			const gridCanvas = document.getElementById('about-grid-canvas');
+			const dungeonDisplay = document.getElementById('about-dungeon-display');
+			const dungeonStatus = document.getElementById('about-dungeon-status');
+			const resetButton = document.getElementById('about-reset-button');
+
+			if (themeValue instanceof HTMLElement) {
+				themeValue.textContent = (root.dataset.theme === 'light' ? 'light' : 'dark').toUpperCase();
+			}
+
+			if (gridCanvas instanceof HTMLCanvasElement) {
+				const context = gridCanvas.getContext('2d');
+				if (context) {
+					const width = gridCanvas.width;
+					const height = gridCanvas.height;
+					const cell = 12;
+					const columns = Math.floor(width / cell);
+					const rows = Math.floor(height / cell);
+					const createKGlyph = (originColumn, originRow) => [
+						...Array.from({ length: 8 }, (_, offset) => ({
+							column: originColumn,
+							row: originRow + offset,
+						})),
+						{ column: originColumn + 1, row: originRow + 4 },
+						{ column: originColumn + 2, row: originRow + 3 },
+						{ column: originColumn + 3, row: originRow + 2 },
+						{ column: originColumn + 1, row: originRow + 5 },
+						{ column: originColumn + 2, row: originRow + 6 },
+						{ column: originColumn + 3, row: originRow + 7 },
+					];
+						const firstK = createKGlyph(2, 3);
+						const secondK = createKGlyph(8, 3);
+						const kkPoints = [...firstK, ...secondK];
+						const ambientPoints = [
+							{ column: 1, row: 1 },
+							{ column: 12, row: 2 },
+						{ column: 11, row: 5 },
+						{ column: 2, row: 11 },
+						{ column: 10, row: 10 },
+						{ column: 12, row: 12 },
+					];
+					let frame = 0;
+
+					const getColor = (name, fallback) =>
+						getComputedStyle(root).getPropertyValue(name).trim() || fallback;
+					const drawCell = (column, row, fill, size = 4, offset = 4) => {
+						context.fillStyle = fill;
+						context.fillRect(column * cell + offset, row * cell + offset, size, size);
+					};
+
+					const drawGridWidget = () => {
+						const accent = getColor('--accent', '#c5ff47');
+						const accentDim = getColor('--accent-dim', 'rgba(197,255,71,0.12)');
+						const widgetBackground = getColor('--about-widget-bg', '#0b0b0b');
+						const gridLine = getColor('--about-grid-line', '#1a1a1a');
+						const ghostColor = getColor('--about-widget-ghost', '#333333');
+
+						context.clearRect(0, 0, width, height);
+						context.fillStyle = widgetBackground;
+						context.fillRect(0, 0, width, height);
+						context.strokeStyle = gridLine;
+						context.lineWidth = 0.5;
+
+						for (let row = 0; row <= rows; row += 1) {
+							context.beginPath();
+							context.moveTo(0, row * cell);
+							context.lineTo(width, row * cell);
+							context.stroke();
+						}
+
+						for (let column = 0; column <= columns; column += 1) {
+							context.beginPath();
+							context.moveTo(column * cell, 0);
+							context.lineTo(column * cell, height);
+							context.stroke();
+						}
+
+						ambientPoints.forEach((point, index) => {
+							const twinkle = (Math.sin(frame * 0.05 + index * 1.3) + 1) / 2;
+							drawCell(point.column, point.row, twinkle > 0.55 ? accentDim : ghostColor, 2, 5);
+						});
+
+						kkPoints.forEach((point, index) => {
+							const pulse = (Math.sin(frame * 0.08 + point.row * 0.7 + index * 0.15) + 1) / 2;
+							drawCell(point.column, point.row, ghostColor, 4, 4);
+							if (pulse > 0.3) {
+								drawCell(point.column, point.row, accent, pulse > 0.75 ? 6 : 5, pulse > 0.75 ? 3 : 3.5);
+							}
+						});
+
+						frame += 1;
+
+						requestAnimationFrame(drawGridWidget);
+					};
+
+					drawGridWidget();
+				}
+			}
+
+			if (
+				!(dungeonDisplay instanceof HTMLElement) ||
+				!(dungeonStatus instanceof HTMLElement) ||
+				!(resetButton instanceof HTMLButtonElement)
+			) {
+				return;
+			}
+
+			const rows = 14;
+			const columns = 36;
+			let grid = [];
+			let player = { row: 1, column: 1 };
+			let goal = { row: rows - 2, column: columns - 2 };
+			let moves = 0;
+
+			const setDungeonStatus = (message) => {
+				dungeonStatus.innerHTML = message;
+			};
+
+			const makeGrid = () =>
+				Array.from({ length: rows }, (_, rowIndex) =>
+					Array.from({ length: columns }, (_, columnIndex) => {
+						if (
+							rowIndex === 0 ||
+							rowIndex === rows - 1 ||
+							columnIndex === 0 ||
+							columnIndex === columns - 1
+						) {
+							return '#';
+						}
+
+						return Math.random() < 0.28 ? '#' : '.';
+					}),
 				);
-				board.textContent = output.join('\n');
+
+			const renderDungeon = () => {
+				let output = '';
+				for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+					for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+						if (rowIndex === player.row && columnIndex === player.column) {
+							output += '<span class="is-packet">@</span>';
+						} else if (rowIndex === goal.row && columnIndex === goal.column) {
+							output += '<span class="is-goal-tile">$</span>';
+						} else {
+							output += grid[rowIndex][columnIndex];
+						}
+					}
+					output += '\n';
+				}
+
+				dungeonDisplay.innerHTML = output;
 			};
 
-			const setStatus = (message) => {
-				status.textContent = message;
+			const resetDungeon = () => {
+				grid = makeGrid();
+				player = { row: 1, column: 1 };
+				goal = { row: rows - 2, column: columns - 2 };
+				moves = 0;
+				grid[player.row][player.column] = '.';
+				grid[goal.row][goal.column] = '.';
+
+				let rowIndex = 1;
+				let columnIndex = 1;
+				while (rowIndex < rows - 2 || columnIndex < columns - 2) {
+					if (rowIndex < rows - 2 && (columnIndex >= columns - 2 || Math.random() < 0.5)) {
+						rowIndex += 1;
+					} else {
+						columnIndex += 1;
+					}
+
+					grid[rowIndex][columnIndex] = '.';
+				}
+
+				setDungeonStatus('route the packet<br>through the chaos.');
+				renderDungeon();
 			};
 
-			const reset = () => {
-				player.row = start.row;
-				player.col = start.col;
-				setStatus('Route the packet through the chaos.');
-				render();
-			};
+			const movePlayer = (deltaRow, deltaColumn) => {
+				const nextRow = player.row + deltaRow;
+				const nextColumn = player.column + deltaColumn;
 
-			const tryMove = (dr, dc) => {
-				const nextRow = Math.min(rows - 1, Math.max(0, player.row + dr));
-				const nextCol = Math.min(cols - 1, Math.max(0, player.col + dc));
-				const nextTile = tile(nextRow, nextCol);
-				if (nextTile === '#') {
-					setStatus('Wall hit. Rerouting...');
+				if (
+					nextRow < 0 ||
+					nextRow >= rows ||
+					nextColumn < 0 ||
+					nextColumn >= columns ||
+					grid[nextRow][nextColumn] === '#'
+				) {
+					setDungeonStatus('packet hit a wall.<br>reroute.');
 					return;
 				}
+
 				player.row = nextRow;
-				player.col = nextCol;
-				if (nextTile === '$') {
-					setStatus('Cache acquired. You win. Press R to run it back.');
-				} else {
-					setStatus('Packet moving...');
+				player.column = nextColumn;
+				moves += 1;
+
+				if (player.row === goal.row && player.column === goal.column) {
+					renderDungeon();
+					setDungeonStatus(`packet delivered<br>in ${moves} hops.`);
+					return;
 				}
-				render();
+
+				renderDungeon();
+				setDungeonStatus('route stable.<br>keep pushing.');
 			};
 
 			document.addEventListener('keydown', (event) => {
 				const key = event.key.toLowerCase();
-				if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'r'].includes(key)) {
+				if (
+					['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'r'].includes(
+						key,
+					)
+				) {
 					event.preventDefault();
 				}
+
 				switch (key) {
 					case 'arrowup':
 					case 'w':
-						tryMove(-1, 0);
+						movePlayer(-1, 0);
 						break;
 					case 'arrowdown':
 					case 's':
-						tryMove(1, 0);
+						movePlayer(1, 0);
 						break;
 					case 'arrowleft':
 					case 'a':
-						tryMove(0, -1);
+						movePlayer(0, -1);
 						break;
 					case 'arrowright':
 					case 'd':
-						tryMove(0, 1);
+						movePlayer(0, 1);
 						break;
 					case 'r':
-						reset();
+						resetDungeon();
 						break;
 				}
 			});
 
-			render();
+			[
+				['about-btn-up', () => movePlayer(-1, 0)],
+				['about-btn-down', () => movePlayer(1, 0)],
+				['about-btn-left', () => movePlayer(0, -1)],
+				['about-btn-right', () => movePlayer(0, 1)],
+			].forEach(([id, action]) => {
+				const button = document.getElementById(id);
+				if (!(button instanceof HTMLButtonElement)) {
+					return;
+				}
+
+				button.addEventListener('click', action);
+				['pointerdown', 'pointerup', 'pointerleave', 'pointercancel'].forEach((eventName) => {
+					button.addEventListener(eventName, () => {
+						button.classList.toggle('is-pressed', eventName === 'pointerdown');
+					});
+				});
+			});
+
+			resetButton.addEventListener('click', resetDungeon);
+			resetDungeon();
 		})();
 	</script>
+
+	<style is:global>
+		:root {
+			--about-accent-glow: rgba(197, 255, 71, 0.25);
+		}
+
+		body.about-terminal {
+			--about-bg: #0b0b0b;
+			--about-bg-elevated: #111111;
+			--about-surface: #161616;
+			--about-border: #222222;
+			--about-grid-line: #1a1a1a;
+			--about-text: #e8e8e8;
+			--about-text-muted: #666666;
+			--about-text-dim: #444444;
+			--about-panel-muted: #2b2b2b;
+			--about-widget-bg: #0b0b0b;
+			--about-widget-ghost: #343434;
+			--about-packet-color: #7be7ff;
+			--about-goal-color: #f4f1e8;
+			background: var(--about-bg);
+			color: var(--about-text);
+			font-family: var(--font-mono);
+			font-size: 13px;
+			line-height: 1.6;
+		}
+
+		body.about-terminal::before {
+			display: none;
+		}
+
+		body.about-terminal .site-main {
+			width: 100%;
+			max-width: none;
+			padding-bottom: 0;
+		}
+
+		html[data-theme='light'] body.about-terminal {
+			--about-bg: #f8f6ef;
+			--about-bg-elevated: #f0ede4;
+			--about-surface: #ebe7de;
+			--about-border: #d9d1c3;
+			--about-grid-line: #d7cfbf;
+			--about-text: #1d1b17;
+			--about-text-muted: #786f64;
+			--about-text-dim: #aaa294;
+			--about-panel-muted: #cbc4b7;
+			--about-widget-bg: #f8f6ef;
+			--about-widget-ghost: #b8b09f;
+			--about-packet-color: #0b82a8;
+			--about-goal-color: #1d1b17;
+		}
+
+		.about-shell {
+			max-width: 1120px;
+			margin: 0 auto;
+			padding: 28px 40px 20px;
+		}
+
+		.about-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			gap: 32px;
+		}
+
+		.about-site-title {
+			display: flex;
+			align-items: center;
+			gap: 0;
+			margin-bottom: 10px;
+			color: var(--about-text);
+			font-size: 15px;
+			font-weight: 500;
+			letter-spacing: 0.02em;
+		}
+
+		.about-site-title__name {
+			color: inherit;
+			text-decoration: none;
+		}
+
+		.about-cursor {
+			display: inline-block;
+			width: 9px;
+			height: 14px;
+			margin-left: 2px;
+			background: var(--accent);
+			box-shadow: 0 0 12px var(--about-accent-glow);
+			animation: blink 1.1s step-end infinite;
+		}
+
+		.about-site-nav {
+			display: inline-flex;
+			gap: 24px;
+			margin-left: 20px;
+			vertical-align: middle;
+		}
+
+		.about-site-nav a {
+			color: var(--about-text-muted);
+			font-size: 11px;
+			letter-spacing: 0.08em;
+			text-decoration: none;
+			text-transform: uppercase;
+			transition: color 120ms ease;
+		}
+
+		.about-site-nav a:hover,
+		.about-site-nav a.is-active {
+			color: var(--accent);
+		}
+
+		.about-tagline {
+			max-width: 320px;
+			margin: 0;
+			font-family: 'Playfair Display', serif;
+			font-size: 16px;
+			font-style: italic;
+			line-height: 1.4;
+			color: var(--about-text-muted);
+		}
+
+		.about-status-bar {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 10px;
+			margin-top: 16px;
+			color: var(--about-text-muted);
+			font-size: 10px;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+		}
+
+		.about-status-dot {
+			width: 7px;
+			height: 7px;
+			border-radius: 999px;
+			background: var(--accent);
+			box-shadow: 0 0 0 0 var(--about-accent-glow);
+			animation: about-pulse 2.5s ease-in-out infinite;
+		}
+
+		.about-status-pipe {
+			color: var(--about-border);
+		}
+
+		.about-status-value {
+			color: var(--about-text);
+			font-weight: 500;
+		}
+
+		.about-header__right {
+			flex-shrink: 0;
+		}
+
+		.about-grid-widget {
+			width: 170px;
+			height: 170px;
+			overflow: hidden;
+			border: 1px solid color-mix(in srgb, var(--about-border) 84%, white 16%);
+			background: var(--about-widget-bg);
+		}
+
+		.about-grid-widget canvas {
+			display: block;
+			width: 100%;
+			height: 100%;
+		}
+
+		.about-divider {
+			height: 1px;
+			margin-top: 28px;
+			background: var(--about-border);
+		}
+
+		.about-divider--tight {
+			margin-top: 0;
+			margin-bottom: 28px;
+		}
+
+		.about-terminal-prompt {
+			padding-top: 18px;
+		}
+
+		.about-terminal-prompt--tight {
+			padding-top: 0;
+			padding-bottom: 18px;
+		}
+
+		.about-prompt-line {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 0;
+			font-size: 13px;
+		}
+
+		.about-prompt-user {
+			color: var(--accent);
+			font-weight: 500;
+		}
+
+		.about-prompt-host,
+		.about-prompt-path,
+		.about-prompt-dollar {
+			color: var(--about-text-muted);
+		}
+
+		.about-prompt-dollar {
+			margin: 0 6px;
+		}
+
+		.about-prompt-command {
+			color: var(--about-text);
+		}
+
+		.about-main {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 260px;
+			gap: 60px;
+			padding-top: 36px;
+		}
+
+		.about-section-header {
+			display: flex;
+			align-items: baseline;
+			gap: 10px;
+			margin-bottom: 24px;
+			padding-bottom: 12px;
+			border-bottom: 1px solid var(--about-border);
+		}
+
+		.about-section-slashes {
+			color: var(--accent);
+			font-weight: 500;
+		}
+
+		.about-section-title {
+			color: var(--about-text-muted);
+			font-size: 13px;
+			letter-spacing: 0.05em;
+			text-transform: uppercase;
+		}
+
+		.about-bio-block {
+			margin-bottom: 22px;
+		}
+
+		.about-bio-block p {
+			margin: 0;
+			color: var(--about-text);
+			font-size: 13px;
+			line-height: 1.75;
+		}
+
+		.about-bio-block em {
+			font-family: 'Playfair Display', serif;
+			font-size: 14.5px;
+			font-style: italic;
+			color: var(--about-text);
+		}
+
+		.about-bio-block .hl {
+			color: var(--accent);
+			font-weight: 500;
+		}
+
+		.about-sidebar-block {
+			margin-bottom: 32px;
+		}
+
+		.about-sidebar-block .about-section-header {
+			margin-bottom: 16px;
+		}
+
+		.about-sidebar-item {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			padding: 10px 0;
+			border-bottom: 1px solid var(--about-border);
+		}
+
+		.about-sidebar-item:last-child {
+			border-bottom: none;
+		}
+
+		.about-sidebar-item__label {
+			color: var(--about-text-muted);
+			font-size: 10px;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+		}
+
+		.about-sidebar-item__value {
+			color: var(--about-text);
+			font-size: 12px;
+		}
+
+		.about-sidebar-item__value a {
+			color: inherit;
+			text-decoration: none;
+			border-bottom: 1px solid var(--about-border);
+			transition:
+				border-color 120ms ease,
+				color 120ms ease;
+		}
+
+		.about-sidebar-item__value a:hover {
+			color: var(--accent);
+			border-color: var(--accent);
+		}
+
+		.about-tag-list {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			margin-top: 4px;
+		}
+
+		.about-tag {
+			padding: 2px 7px;
+			border: 1px solid var(--about-border);
+			color: var(--about-text-muted);
+			font-size: 10px;
+			letter-spacing: 0.06em;
+			text-transform: lowercase;
+			transition:
+				border-color 120ms ease,
+				color 120ms ease;
+		}
+
+		.about-tag:hover {
+			color: var(--accent);
+			border-color: color-mix(in srgb, var(--accent) 50%, var(--about-border) 50%);
+		}
+
+		.about-dungeon-section {
+			padding-top: 40px;
+		}
+
+		.about-dungeon-layout {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 200px;
+			border: 1px solid var(--about-border);
+			background: var(--about-bg);
+		}
+
+		.about-dungeon-display {
+			margin: 0;
+			padding: 28px 32px;
+			color: var(--accent);
+			font-size: 18px;
+			line-height: 1.42;
+			letter-spacing: 0.07em;
+			white-space: pre;
+			overflow-x: auto;
+			text-shadow: 0 0 14px var(--about-accent-glow);
+		}
+
+		.about-dungeon-display .is-packet {
+			color: var(--about-packet-color);
+			text-shadow: 0 0 16px color-mix(in srgb, var(--about-packet-color) 55%, transparent);
+		}
+
+		.about-dungeon-display .is-goal-tile {
+			color: var(--about-goal-color);
+			text-shadow: none;
+		}
+
+		.about-dungeon-panel {
+			display: flex;
+			flex-direction: column;
+			gap: 22px;
+			padding: 24px 18px;
+			border-left: 1px solid var(--about-border);
+			background: var(--about-bg-elevated);
+		}
+
+		.about-dungeon-panel__label {
+			margin-bottom: 10px;
+			color: var(--about-text-dim);
+			font-size: 9px;
+			letter-spacing: 0.14em;
+			text-transform: uppercase;
+		}
+
+		.about-dpad {
+			display: grid;
+			grid-template-columns: repeat(3, 34px);
+			grid-template-rows: repeat(3, 34px);
+			gap: 3px;
+			width: fit-content;
+		}
+
+		.about-dpad__button {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 34px;
+			height: 34px;
+			padding: 0;
+			border: 1px solid var(--about-border);
+			background: var(--about-bg);
+			color: var(--about-text-muted);
+			font: inherit;
+			cursor: pointer;
+			transition:
+				background 80ms ease,
+				color 80ms ease,
+				border-color 80ms ease;
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		.about-dpad__button:hover,
+		.about-dpad__button.is-pressed {
+			background: color-mix(in srgb, var(--accent) 10%, var(--about-bg) 90%);
+			color: var(--accent);
+			border-color: color-mix(in srgb, var(--accent) 50%, var(--about-border) 50%);
+		}
+
+		.about-dpad__empty {
+			visibility: hidden;
+			pointer-events: none;
+		}
+
+		.about-dungeon-legend {
+			display: flex;
+			flex-direction: column;
+			gap: 7px;
+		}
+
+		.about-legend-row {
+			display: flex;
+			align-items: center;
+			gap: 9px;
+			font-size: 11px;
+		}
+
+		.about-legend-char {
+			width: 12px;
+			flex-shrink: 0;
+			color: var(--accent);
+			font-weight: 500;
+			text-align: center;
+		}
+
+		.about-legend-char.is-packet {
+			color: var(--about-packet-color);
+		}
+
+		.about-legend-char.is-wall {
+			color: var(--about-text-dim);
+		}
+
+		.about-legend-char.is-goal {
+			color: var(--about-text);
+		}
+
+		.about-legend-desc {
+			color: var(--about-text-muted);
+		}
+
+		.about-dungeon-status {
+			margin: auto 0 0;
+			color: var(--about-text-muted);
+			font-family: 'Playfair Display', serif;
+			font-size: 11px;
+			font-style: italic;
+			line-height: 1.5;
+		}
+
+		.about-reset-button {
+			width: 100%;
+			padding: 9px;
+			border: 1px solid var(--about-border);
+			background: transparent;
+			color: var(--about-text-muted);
+			font: inherit;
+			font-size: 10px;
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+			cursor: pointer;
+			transition:
+				border-color 120ms ease,
+				color 120ms ease,
+				background 120ms ease;
+		}
+
+		.about-reset-button:hover {
+			border-color: color-mix(in srgb, var(--accent) 50%, var(--about-border) 50%);
+			background: color-mix(in srgb, var(--accent) 10%, var(--about-bg) 90%);
+			color: var(--accent);
+		}
+
+		.about-footer {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 16px;
+			margin-top: 60px;
+			padding: 20px 0 0;
+			border-top: 1px solid var(--about-border);
+			color: var(--about-text-dim);
+			font-size: 10px;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		@keyframes about-pulse {
+			0%,
+			100% {
+				opacity: 1;
+				box-shadow: 0 0 0 0 var(--about-accent-glow);
+			}
+			50% {
+				opacity: 0.72;
+				box-shadow: 0 0 0 4px rgba(0, 0, 0, 0);
+			}
+		}
+
+		@media (max-width: 980px) {
+			.about-main {
+				grid-template-columns: 1fr;
+				gap: 40px;
+			}
+
+			.about-dungeon-layout {
+				grid-template-columns: 1fr;
+			}
+
+			.about-dungeon-panel {
+				border-left: 0;
+				border-top: 1px solid var(--about-border);
+			}
+		}
+
+		@media (max-width: 760px) {
+			.about-shell {
+				padding: 24px 20px 20px;
+			}
+
+			.about-header {
+				flex-direction: column;
+				align-items: stretch;
+			}
+
+			.about-header__right {
+				align-self: flex-end;
+			}
+
+			.about-site-title {
+				flex-wrap: wrap;
+				row-gap: 12px;
+			}
+
+			.about-site-nav {
+				margin-left: 0;
+				width: 100%;
+			}
+
+			.about-tagline {
+				max-width: none;
+			}
+
+			.about-status-bar {
+				gap: 8px;
+			}
+
+			.about-dungeon-display {
+				padding: 22px 18px;
+				font-size: 14px;
+			}
+		}
+
+		@media (max-width: 560px) {
+			.about-grid-widget {
+				width: 136px;
+				height: 136px;
+			}
+
+			.about-main {
+				padding-top: 28px;
+			}
+
+			.about-dungeon-display {
+				font-size: 11px;
+				letter-spacing: 0.045em;
+			}
+
+			.about-footer {
+				flex-direction: column;
+				align-items: flex-start;
+			}
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.about-cursor,
+			.about-status-dot {
+				animation: none;
+			}
+		}
+	</style>
 </SiteLayout>
