@@ -3,13 +3,14 @@
 @import '@fontsource/ibm-plex-sans/600.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
-@import '@fontsource/press-start-2p/400.css';
+@import '@fontsource/zilla-slab/600.css';
+@import '@fontsource/zilla-slab/700.css';
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400;1,700&display=swap');
 
 :root {
 	--font-body: 'IBM Plex Sans', sans-serif;
 	--font-mono: 'IBM Plex Mono', monospace;
-	--font-display: 'Press Start 2P', monospace;
+	--font-display: 'Zilla Slab', serif;
 	--content-width: min(900px, calc(100% - 3rem));
 	--header-height: 4.75rem;
 	--transition: 120ms ease;
@@ -43,7 +44,7 @@ html[data-theme='dark'] {
 	--article-subheading: #ccc;
 	--article-code-bg: #161616;
 	--article-code-border: #2a2a2a;
-	--article-code-inline: #dd44aa;
+	--article-code-inline: var(--accent);
 	--article-pre-bg: #111;
 }
 
@@ -75,7 +76,7 @@ html[data-theme='light'] {
 	--article-subheading: #2a392a;
 	--article-code-bg: #eef2eb;
 	--article-code-border: #c6d1c6;
-	--article-code-inline: #8a2f5f;
+	--article-code-inline: var(--accent);
 	--article-pre-bg: #f1f4ef;
 }
 
@@ -125,6 +126,61 @@ img,
 svg {
 	display: block;
 	max-width: 100%;
+}
+
+.mermaid-figure {
+	margin: 2rem 0;
+	padding: 1rem;
+	border: 1px solid var(--article-code-border);
+	background: var(--article-pre-bg);
+}
+
+.mermaid-controls {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+	margin-bottom: 0.75rem;
+}
+
+.mermaid-controls button {
+	border: 1px solid var(--article-code-border);
+	background: var(--article-code-bg);
+	color: var(--accent);
+	font-family: var(--font-mono);
+	font-size: 11px;
+	padding: 0.35rem 0.6rem;
+	cursor: pointer;
+}
+
+.mermaid-controls button:hover {
+	border-color: var(--accent);
+}
+
+.mermaid-viewport {
+	--mermaid-scale: 1;
+	overflow: auto;
+	padding-bottom: 0.25rem;
+}
+
+.mermaid-canvas {
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	min-width: fit-content;
+	transform: scale(var(--mermaid-scale));
+	transform-origin: top center;
+	padding: 0.25rem;
+}
+
+.mermaid-figure .mermaid,
+.mermaid-figure .mermaid svg {
+	background: transparent !important;
+}
+
+.mermaid-figure .mermaid svg {
+	display: block;
+	height: auto;
+	max-width: none;
 }
 
 a {
@@ -1794,13 +1850,13 @@ body.article-page .site-main {
 }
 
 .article-page .article-title {
-	font-family: 'Playfair Display', Georgia, serif;
-	font-style: italic;
+	font-family: var(--font-display);
+	font-style: normal;
 	font-weight: 700;
 	font-size: 72px;
-	line-height: 1.2;
+	line-height: 1.08;
 	color: var(--article-title);
-	letter-spacing: -0.01em;
+	letter-spacing: -0.02em;
 	margin-bottom: 20px;
 }
 
@@ -1938,6 +1994,37 @@ body.article-page .site-main {
 	margin: 28px 0;
 	color: var(--article-muted);
 	font-style: italic;
+}
+
+.article-page .prose table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 28px 0;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	background: var(--article-pre-bg);
+	border: 1px solid var(--article-rule);
+}
+
+.article-page .prose thead {
+	background: rgba(var(--accent-rgb) / 0.08);
+}
+
+.article-page .prose th,
+.article-page .prose td {
+	padding: 12px 14px;
+	border: 1px solid var(--article-rule);
+	text-align: left;
+	vertical-align: top;
+	line-height: 1.6;
+	color: var(--article-prose);
+}
+
+.article-page .prose th {
+	color: var(--article-heading);
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
 }
 
 .article-page .post-nav {

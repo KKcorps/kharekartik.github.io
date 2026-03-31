@@ -32,6 +32,221 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 ---
 
 <SiteLayout title={post.data.title} description={post.data.summary} hideChrome bodyClass="article-page">
+	<script>
+		import mermaid from 'mermaid';
+
+		const getThemeVariables = () => {
+			const styles = getComputedStyle(document.documentElement);
+			const accent = styles.getPropertyValue('--accent').trim() || '#39ff14';
+			const articleBg = styles.getPropertyValue('--article-pre-bg').trim() || '#111111';
+			const articleText = styles.getPropertyValue('--article-text').trim() || '#f0f0f0';
+			const articleProse = styles.getPropertyValue('--article-prose').trim() || '#c8c8c8';
+			const articleRule = styles.getPropertyValue('--article-rule').trim() || '#222222';
+			const articleHeading = styles.getPropertyValue('--article-heading').trim() || '#e0e0e0';
+			const isLight = document.documentElement.dataset.theme === 'light';
+
+			return {
+				theme: isLight ? 'base' : 'base',
+				themeVariables: {
+					background: articleBg,
+					primaryColor: isLight ? '#edf2e9' : '#0d120d',
+					primaryTextColor: articleText,
+					primaryBorderColor: accent,
+					lineColor: accent,
+					secondaryColor: isLight ? '#f7f8f5' : '#111111',
+					secondaryTextColor: articleText,
+					secondaryBorderColor: articleRule,
+					tertiaryColor: isLight ? '#f1f4ef' : '#161616',
+					tertiaryTextColor: articleProse,
+					tertiaryBorderColor: articleRule,
+					mainBkg: isLight ? '#edf2e9' : '#0d120d',
+					secondBkg: isLight ? '#f7f8f5' : '#111111',
+					tertiaryBkg: isLight ? '#f1f4ef' : '#161616',
+					nodeBkg: isLight ? '#edf2e9' : '#0d120d',
+					nodeBorder: accent,
+					clusterBkg: isLight ? '#f1f4ef' : '#111111',
+					clusterBorder: articleRule,
+					defaultLinkColor: accent,
+					titleColor: articleHeading,
+					textColor: articleText,
+					fontFamily: 'IBM Plex Mono, monospace',
+				},
+			};
+		};
+
+		const upgradeMermaidBlocks = () => {
+			document.querySelectorAll('pre[data-language="mermaid"] > code').forEach((codeBlock, index) => {
+				const pre = codeBlock.parentElement;
+				if (!(pre instanceof HTMLElement) || pre.dataset.mermaidUpgraded === 'true') {
+					return;
+				}
+
+				const wrapper = document.createElement('figure');
+				wrapper.className = 'mermaid-figure';
+				wrapper.dataset.mermaidSource = codeBlock.textContent ?? '';
+				wrapper.dataset.mermaidIndex = String(index);
+
+				const graph = document.createElement('div');
+				graph.className = 'mermaid';
+				graph.id = `mermaid-diagram-${index}`;
+				graph.textContent = wrapper.dataset.mermaidSource;
+
+				wrapper.append(graph);
+				pre.replaceWith(wrapper);
+			});
+		};
+
+		const fitDiagramToViewport = (figure) => {
+			if (!(figure instanceof HTMLElement)) {
+				return;
+			}
+
+			const viewport = figure.querySelector('.mermaid-viewport');
+			const svg = figure.querySelector('svg');
+			if (!(viewport instanceof HTMLElement) || !(svg instanceof SVGElement)) {
+				return;
+			}
+
+			const viewportWidth = viewport.clientWidth;
+			const svgWidth =
+				svg.viewBox?.baseVal?.width ||
+				svg.getBBox?.().width ||
+				svg.getBoundingClientRect().width;
+
+			if (!viewportWidth || !svgWidth) {
+				return;
+			}
+
+			const fittedScale = Math.min(1, viewportWidth / svgWidth);
+			const currentScale = Number.parseFloat(figure.dataset.scale ?? '1');
+			const nextScale = Number.isFinite(currentScale) && currentScale !== 1 ? currentScale : fittedScale;
+
+			figure.dataset.fitScale = String(fittedScale);
+			figure.dataset.scale = String(nextScale);
+			viewport.style.setProperty('--mermaid-scale', String(nextScale));
+		};
+
+		const attachDiagramControls = (figure) => {
+			if (!(figure instanceof HTMLElement) || figure.dataset.mermaidReady === 'true') {
+				return;
+			}
+
+			const svg = figure.querySelector('svg');
+			if (!(svg instanceof SVGElement)) {
+				return;
+			}
+
+			const controls = document.createElement('div');
+			controls.className = 'mermaid-controls';
+			controls.innerHTML = `
+				<button type="button" data-mermaid-zoom="out" aria-label="Zoom out">-</button>
+				<button type="button" data-mermaid-zoom="reset" aria-label="Reset zoom">Reset</button>
+				<button type="button" data-mermaid-zoom="in" aria-label="Zoom in">+</button>
+			`;
+
+			const viewport = document.createElement('div');
+			viewport.className = 'mermaid-viewport';
+
+			const canvas = document.createElement('div');
+			canvas.className = 'mermaid-canvas';
+			canvas.append(svg);
+			viewport.append(canvas);
+
+			figure.append(controls, viewport);
+			figure.dataset.mermaidReady = 'true';
+			fitDiagramToViewport(figure);
+
+			controls.addEventListener('click', (event) => {
+				const target = event.target;
+				if (!(target instanceof HTMLButtonElement)) {
+					return;
+				}
+
+				const action = target.dataset.mermaidZoom;
+				const scale = Number.parseFloat(figure.dataset.scale ?? '1') || 1;
+				const fitScale = Number.parseFloat(figure.dataset.fitScale ?? '1') || 1;
+				const nextScale =
+					action === 'in'
+						? Math.min(scale + 0.15, 2.5)
+						: action === 'out'
+							? Math.max(scale - 0.15, Math.min(0.4, fitScale))
+							: fitScale;
+
+				figure.dataset.scale = String(nextScale);
+				viewport.style.setProperty('--mermaid-scale', String(nextScale));
+			});
+		};
+
+		const renderMermaidBlocks = async () => {
+			upgradeMermaidBlocks();
+
+			const figures = Array.from(document.querySelectorAll('.mermaid-figure'));
+			if (figures.length === 0) {
+				return;
+			}
+
+			mermaid.initialize({
+				startOnLoad: false,
+				securityLevel: 'loose',
+				...getThemeVariables(),
+			});
+
+			for (const [index, figure] of figures.entries()) {
+				if (!(figure instanceof HTMLElement)) {
+					continue;
+				}
+
+				const source = figure.dataset.mermaidSource ?? '';
+				const graph = document.createElement('div');
+				graph.className = 'mermaid';
+				graph.id = `mermaid-diagram-${index}`;
+				graph.textContent = source;
+				figure.dataset.mermaidReady = 'false';
+				figure.replaceChildren(graph);
+			}
+
+			await mermaid.run({
+				querySelector: '.mermaid',
+			});
+
+			document.querySelectorAll('.mermaid-figure').forEach((figure) => {
+				attachDiagramControls(figure);
+			});
+		};
+
+		const bootMermaid = () => {
+			void renderMermaidBlocks();
+
+			const observer = new MutationObserver((mutations) => {
+				if (
+					mutations.some(
+						(mutation) =>
+							mutation.type === 'attributes' &&
+							mutation.attributeName === 'data-theme',
+					)
+				) {
+					void renderMermaidBlocks();
+				}
+			});
+
+			observer.observe(document.documentElement, {
+				attributes: true,
+				attributeFilter: ['data-theme'],
+			});
+
+			window.addEventListener('resize', () => {
+				document.querySelectorAll('.mermaid-figure').forEach((figure) => {
+					fitDiagramToViewport(figure);
+				});
+			});
+		};
+
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', bootMermaid, { once: true });
+		} else {
+			bootMermaid();
+		}
+	</script>
 
 	<script is:inline>
 		(() => {
