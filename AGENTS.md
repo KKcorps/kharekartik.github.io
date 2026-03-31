@@ -10,6 +10,8 @@ This repo is an Astro personal site with content-driven writing pages. The notes
 - Preferred writing style:
   - avoid overly technical or spec-like headings
   - avoid excessive punctuation and rhetorical flourishes
+  - avoid heavy use of quotation marks unless they are necessary
+  - avoid Oxford commas and trim comma-heavy sentence structure
   - break up long sections with visuals or tables where useful
   - prefer calm, practical explanations over hype-heavy phrasing
 

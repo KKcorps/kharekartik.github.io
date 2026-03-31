@@ -1922,41 +1922,47 @@ body.article-page .site-main {
 }
 
 .article-page .prose h2 {
-	font-family: var(--font-mono);
-	font-size: 13px;
+	font-family: var(--font-display);
+	font-size: 34px;
 	font-weight: 700;
 	color: var(--article-heading);
-	letter-spacing: 0.1em;
-	margin: 40px 0 16px;
-	display: flex;
-	align-items: center;
-	gap: 10px;
+	letter-spacing: -0.02em;
+	line-height: 1.12;
+	margin: 52px 0 18px;
 	text-transform: none;
 	border-bottom: 0;
 	padding: 0;
 }
 
 .article-page .prose h2::before {
-	content: '##';
-	color: var(--accent);
-	font-size: 11px;
+	content: none;
 }
 
 .article-page .prose h3 {
-	font-family: var(--font-mono);
-	font-size: 12px;
+	font-family: var(--font-body);
+	font-size: 22px;
 	font-weight: 700;
 	color: var(--article-subheading);
-	letter-spacing: 0.08em;
-	margin: 28px 0 12px;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+	margin: 32px 0 12px;
 	text-transform: none;
 	border-bottom: 0;
 	padding: 0;
 }
 
 .article-page .prose h3::before {
-	content: '### ';
-	color: var(--article-muted);
+	content: none;
+}
+
+.article-page .prose h4 {
+	font-family: var(--font-body);
+	font-size: 17px;
+	font-weight: 700;
+	color: var(--article-text);
+	letter-spacing: 0;
+	line-height: 1.35;
+	margin: 22px 0 8px;
 }
 
 .article-page .prose code {
