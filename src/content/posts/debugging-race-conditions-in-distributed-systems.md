@@ -61,24 +61,20 @@ When engineers skip this side by side comparison they often patch the wrong plac
 I also look for state volume markers in logs. Lines such as initialized with metadata from K entities or snapshot contains K records can expose missing prerequisites more clearly than generic event names. If the broken node reports lower counts at the same logical phase you have a concrete lead rather than a vague suspicion.
 
 ```mermaid
-sequenceDiagram
-    participant Q as Queue
-    participant N1 as Broken Node
-    participant N2 as Healthy Node
-    participant M as Metadata
+flowchart TD
+    Q[Queue] --> BA[Broken node receives Operation A]
+    Q --> BB[Broken node receives Operation B]
+    BB --> BC[Broken node executes B first]
+    BC --> BD[Reads stale dependency state]
+    BD --> BE[Publishes incorrect output]
+    BE --> BF[Operation A runs late]
 
-    Q->>N1: Operation A enqueued
-    Q->>N1: Operation B enqueued
-    N1->>N1: Execute B first
-    N1->>M: Read stale dependency state
-    N1->>N1: Publish incorrect output
-    N1->>N1: Execute A late
-
-    Q->>N2: Operation A enqueued
-    N2->>N2: Execute A immediately
-    N2->>M: Register dependency state
-    Q->>N2: Operation B enqueued
-    N2->>N2: Execute B with ready state
+    Q --> HA[Healthy node receives Operation A]
+    HA --> HB[Healthy node executes A immediately]
+    HB --> HC[Registers dependency state]
+    Q --> HD[Healthy node receives Operation B]
+    HC --> HE[Healthy node executes B with ready state]
+    HD --> HE
 ```
 
 ## Finding the guard that looked safe but was not

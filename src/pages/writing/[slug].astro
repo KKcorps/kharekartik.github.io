@@ -96,32 +96,21 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 			});
 		};
 
-		const fitDiagramToViewport = (figure) => {
+		const syncDiagramScale = (figure) => {
 			if (!(figure instanceof HTMLElement)) {
 				return;
 			}
 
 			const viewport = figure.querySelector('.mermaid-viewport');
-			const svg = figure.querySelector('svg');
-			if (!(viewport instanceof HTMLElement) || !(svg instanceof SVGElement)) {
+			if (!(viewport instanceof HTMLElement)) {
 				return;
 			}
 
-			const viewportWidth = viewport.clientWidth;
-			const svgWidth =
-				svg.viewBox?.baseVal?.width ||
-				svg.getBBox?.().width ||
-				svg.getBoundingClientRect().width;
-
-			if (!viewportWidth || !svgWidth) {
-				return;
-			}
-
-			const fittedScale = Math.min(1, viewportWidth / svgWidth);
 			const currentScale = Number.parseFloat(figure.dataset.scale ?? '1');
-			const nextScale = Number.isFinite(currentScale) && currentScale !== 1 ? currentScale : fittedScale;
+			const nextScale = Number.isFinite(currentScale)
+				? Math.min(Math.max(currentScale, 0.4), 2.5)
+				: 1;
 
-			figure.dataset.fitScale = String(fittedScale);
 			figure.dataset.scale = String(nextScale);
 			viewport.style.setProperty('--mermaid-scale', String(nextScale));
 		};
@@ -154,7 +143,7 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 
 			figure.append(controls, viewport);
 			figure.dataset.mermaidReady = 'true';
-			fitDiagramToViewport(figure);
+			syncDiagramScale(figure);
 
 			controls.addEventListener('click', (event) => {
 				const target = event.target;
@@ -164,16 +153,15 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 
 				const action = target.dataset.mermaidZoom;
 				const scale = Number.parseFloat(figure.dataset.scale ?? '1') || 1;
-				const fitScale = Number.parseFloat(figure.dataset.fitScale ?? '1') || 1;
 				const nextScale =
 					action === 'in'
 						? Math.min(scale + 0.15, 2.5)
 						: action === 'out'
-							? Math.max(scale - 0.15, Math.min(0.4, fitScale))
-							: fitScale;
+							? Math.max(scale - 0.15, 0.4)
+							: 1;
 
 				figure.dataset.scale = String(nextScale);
-				viewport.style.setProperty('--mermaid-scale', String(nextScale));
+				syncDiagramScale(figure);
 			});
 		};
 
@@ -236,7 +224,7 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 
 			window.addEventListener('resize', () => {
 				document.querySelectorAll('.mermaid-figure').forEach((figure) => {
-					fitDiagramToViewport(figure);
+					syncDiagramScale(figure);
 				});
 			});
 		};

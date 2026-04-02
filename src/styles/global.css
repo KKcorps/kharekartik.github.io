@@ -163,12 +163,9 @@ svg {
 }
 
 .mermaid-canvas {
-	display: flex;
-	justify-content: center;
-	align-items: flex-start;
-	min-width: fit-content;
-	transform: scale(var(--mermaid-scale));
-	transform-origin: top center;
+	width: calc(var(--mermaid-scale) * 100%);
+	min-width: 100%;
+	margin: 0 auto;
 	padding: 0.25rem;
 }
 
