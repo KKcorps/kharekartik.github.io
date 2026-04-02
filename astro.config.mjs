@@ -2,7 +2,7 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-	site: 'https://noslop.lol',
+	site: 'https://kharekartik.dev',
 	base: '/',
 	output: 'static',
 	trailingSlash: 'always',

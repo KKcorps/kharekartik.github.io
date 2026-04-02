@@ -64,7 +64,7 @@ draft: false
 
 This repo includes `.github/workflows/deploy.yml` for GitHub Pages.
 
-- This site is configured for the custom domain `noslop.lol`.
+- This site is configured for the custom domain `kharekartik.dev`.
 - Astro uses a root base path (`/`) for all builds so routes and assets resolve correctly on the custom domain.
 
 If you want to test locally, run:
