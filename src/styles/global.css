@@ -2021,6 +2021,8 @@ body.article-page .site-main {
 	vertical-align: top;
 	line-height: 1.6;
 	color: var(--article-prose);
+	overflow-wrap: anywhere;
+	word-break: break-word;
 }
 
 .article-page .prose th {
@@ -2028,6 +2030,14 @@ body.article-page .site-main {
 	font-size: 11px;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+	.article-page .prose table {
+		display: block;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
 }
 
 .article-page .post-nav {
