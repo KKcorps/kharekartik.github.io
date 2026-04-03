@@ -18,7 +18,7 @@ I have been here enough times that the investigation path is now muscle memory. 
 
 ## A quick primer on partial upserts in Apache Pinot
 
-Pinot is an OLAP store built for real-time analytics at scale. By default it is append-only: every incoming event becomes a new row. When upserts are enabled, Pinot tracks a primary key index across segments and replaces or merges the existing row for each key on every new record.
+Pinot is an OLAP store built for realtime analytics at scale. By default it is append-only: every incoming event becomes a new row. The data stored in Pinot is fundamentally immutable in form of segment tar files. So how does it support upserts? It tracks a primary key index across segments in a metadata manager and maintains a pointer to the latest record for that primary key. During query time, only the latest record is fetched for the primary key while rest aere ignored.
 
 Partial upserts are more surgical than full upserts. You define a merge function per column. One column might use `MAX` so only the latest value wins. Another might use `UNION` to accumulate a list. Each incoming record is merged field-by-field against the current best record for that key, which lives in the upsert metadata manager. If the metadata is incomplete when consumption begins, merges produce wrong output with no visible indication that anything went wrong.
 
@@ -28,15 +28,15 @@ The incident below is what happens when the metadata manager is missing a prior 
 
 ## Why race conditions feel invisible in production
 
-Most production safety checks are structural. They confirm the data shape is valid and writes are acknowledged. They do not prove that every dependency completed before downstream work began.
+Most production safety checks are structural and not semantic.
 
-So a record can be perfectly valid JSON with perfectly wrong values. A replica can look healthy while carrying one field populated from a stale branch of history. Every local check passes and the global behavior is still wrong. At root, race conditions are ordering failures, and they only surface when timing shifts just enough under load spikes, rebalances, or thread pool contention to break an assumption that normally holds.
+So a record can be perfectly valid JSON with perfectly wrong values. A replica can look healthy while carrying one field populated from a stale branch of history. Every local check passes and the global behavior is still wrong. At root, race conditions are ordering failures and they only surface when timing shifts just enough under load spikes, rebalances, or thread pool contention to break an assumption that normally holds.
 
-This is also why they find you at 2 AM and not at 2 PM.
+This is also why they find you at 2 AM which is the preferred time to do maintainence on clusters.
 
 ## The first move: establish raw ground truth
 
-When an incident starts I do not begin with theories. I begin with raw state. Most distributed systems provide a way to bypass caches and normal query routing so you can ask a specific node what it has persisted for a key.
+When an incident starts begin with raw state. Most distributed systems provide a way to bypass caches and normal query routing so you can ask a specific node what it has persisted for a key. You need to figure out the raw data stored in each node and if it actually diverges.  
 
 The strongest race signal is narrow: one replica disagrees and the rest agree. When code and input are otherwise the same, the remaining explanation is state timing on that node during processing. That single finding shrinks your search space from the entire system to one node, one key, and one time window.
 
@@ -52,7 +52,7 @@ flowchart TD
 
 ### What this looked like in practice
 
-In a real incident on an Apache Pinot real-time table with partial upsert enabled, the first signal was a query anomaly. Pinot has a diagnostic mode called `skipUpsert=true` that bypasses the upsert view and exposes every raw segment version of a record. Running it across one partition revealed this:
+In a real incident on an Apache Pinot real-time table with partial upsert enabled, the first signal was a query anomaly. Pinot has a diagnostic mode called `skipUpsert=true` that bypasses the upsert view and exposes every record for the primary key. Running it across one server revealed this:
 
 ```sql
 SET skipUpsert=true;
@@ -77,7 +77,7 @@ Crucially, this anomaly appeared only on Server 1. Servers 0, 2, and 3 had consi
 
 After scope is reduced I build a timeline with hard timestamps. This is the most important part of the entire process. The goal is to find the first moment where ordering diverged between the broken node and a healthy one. Everything before that moment is setup and everything after it is consequence.
 
-I pay close attention to state volume markers in logs. Lines like `snapshot contains K records` can expose missing prerequisites more clearly than generic event names. If the broken node reports a lower count at the same logical phase, that is a concrete lead.
+I mostly looked for major events that happened in the lifecyle of SEG\_M1 across servers. Since I already knew we had unmerged data, it meant either the SEG\_M data was not present in the server when SEG\_M1 started consuming OR we had a bug in our code where we weren't handling merging correctly.
 
 ```mermaid
 flowchart TD
@@ -97,6 +97,8 @@ flowchart TD
 ```
 
 ### The timeline on the broken node
+
+From server-1's  lifecycle logs it was pretty hard to determine what went wrong. So I started comparing it against the healthy servers's logs and figure out all points of divergence. (I use Claude code heavily for such analysis)
 
 Reconstructing Server 1's log sequence produced this exact divergence pattern side by side against the healthy servers.
 
@@ -126,13 +128,13 @@ T+83:42 — SEG_M finally added to upsert metadata via CONSUMING→ONLINE
 
 The snapshot count was the concrete tell. Every other server logged `Taking snapshot for N segments`. Server 1 logged `Taking snapshot for N-1 segments`. One missing segment in one log line made the ordering failure undeniable rather than speculative.
 
-The consumption volume confirmed the lateness. Servers 0, 2, and 3 consumed roughly 7,000 events in their first SEG\_M1 batch. Server 1 consumed roughly 32,000, a 4.5x catchup load, applied without the prior segment's keys present.
+I also noticed that SEG\_M never started consuming data on this server (since OFFLINE -> CONSUMING state transition was skipped). And when we finally downloaded the data committed by other servers for this segment (CONSUMING -> ONLINE), the SEG\_M1 had already started cosuming at this point. 
 
 ## Finding the guard that looked safe but was not
 
 Once you know where ordering broke you can inspect coordination code with intent. In many systems there is already a guard, and that is why these bugs survive code review. The guard exists but enforces a weaker property than the runtime path needs.
 
-The question I keep asking is simple: does this guard enforce ordering at the exact unit of work where correctness is defined? A startup latch protects cold start and says nothing about late-arriving updates during normal operation. A global readiness flag tells you the service is broadly ready, not whether a specific partition has loaded the segment this operation depends on.
+The question I keep asking is simple: does this guard enforce ordering at the exact unit of work where correctness is defined? A startup latch protects cold start and says nothing about late arriving updates during normal operation. A global readiness flag tells you the service is broadly ready not whether a specific partition has loaded the segment this operation depends on.
 
 ### The one-shot latch that looked adequate
 
@@ -147,37 +149,25 @@ The latch is one-way. Once it flips to `true` it never rechecks. All four server
 | Server 2 | Day 2, 22:49 | Day 3, 17:49 |
 | Server 3 | Day 0, 23:00 | Day 3, 17:49 |
 
-The gate was permanently open across the entire cluster. There was no mechanism to make a newly created consuming segment wait for the prior segment to finish registering in the upsert metadata manager. The guard existed and enforced exactly the wrong granularity. It was global and one-shot, while the correctness requirement was per-partition and per-segment-transition.
-
-## How one node incident turns into system wide corruption
-
-A single bad write does not stay isolated once consistency machinery starts reconciling replicas. If conflict resolution picks the wrong version as winner, that version becomes canonical and replication spreads it faithfully. Anti-entropy processes converge state without knowing which value is semantically correct. By the time humans notice, the cluster may be internally consistent and externally wrong. This is why urgency matters. Containment before root cause is fully confirmed can still limit the blast radius.
+The gate was permanently open across the entire cluster. There was no mechanism to make a newly created consuming segment wait for the prior segment to finish registering in the upsert metadata manager. The guard existed and enforced exactly the wrong granularity. It was global and one shot while the correctness requirement was per partition and per segment-transition.
 
 ### How Server 1's bad data became everyone's problem
 
-When SEG\_M1's commit cycle ran the next day, the controller selected Server 1 as the winning replica and pushed its segment to the distributed store. The other servers received the committed segment and attempted to replace their local version.
+When SEG\_M1's commit cycle ran the next day, the controller selected Server 1 as the winning replica (since it had consumed to same offset as other servers) and pushed its segment to the distributed store. The other servers also had consumed to exact same offset so they were told to keep their local versions as long as they were same as Server-1s.
 
-Since Server 1 had consumed without SEG\_M's keys, its segment had materially different content. The other three servers detected a checksum mismatch during replacement and logged a warning about primary keys not being replaced. Roughly 7,700 keys per partition across two partitions were affected. All three servers emitted this within the same second.
-
-Those keys became non-queryable. The anti-entropy process then cleaned them up asynchronously, making the gap permanent until a manual segment reload was triggered. The reload re-inserted the missing keys with correct segment pointers, restoring the data. But this only happened after weeks of the gap sitting quietly in production.
-
-The same race was independently present on a second partition, affecting a comparable number of keys. Neither partition was a one-time event. Any server that joins a partition mid-stream, whether after a rebalance, a restart, or a reassignment, carries this same risk on every subsequent segment commit cycle.
+However, since Server 1 had consumed without SEG\_M's keys, its segment had materially different content. The other three servers detected a checksum mismatch while retaining segment and logged a warning about this. They then proceeded to replace their local correct version with incorrect version from Server 1 present in distributed store.
 
 ## Practical containment while investigation is in progress
 
-It is 2 AM. The goal is not elegance. It is to stop creating new inconsistent state while you validate hypotheses. That can mean pausing a consumer group for affected partitions or routing writes through a stricter serialized path.
+It is 2 AM. The goal is not elegance. It is to stop creating new inconsistent state while you validate hypotheses. That can mean pausing a consumer group for affected partitions or routing writes through a stricter serialized path. 
 
-Tag affected keys and time windows immediately. Even a rough list helps when you need targeted repair later. If the system supports versioned reads, use them early to verify when corruption began. Reopen traffic only after the timeline and the guard failure are both understood.
-
-## Choosing a durable fix instead of a patch
-
-The best fix is often narrower than teams expect. Broad locking and heavy global coordination are usually not necessary. Prefer per-entity synchronization where dependencies are local. Ensure every wait has a matching signal on success, failure, and no-op paths, since missing one signal path can trade corruption for deadlocks. Then test under injected delays at the exact points that failed in production. A fix that only passes at ideal timing is not a fix yet.
+Honestly, in this case the only way out was to reconsume the data. This however meant rolling back everything to a state a few days older than current one. We discussed the usecase and freshness mattered more than correctness there. We just did a reload on servers to ensure results were consistent across servers (even though incorrect)
 
 ### What the right fix looks like here
 
 The one-shot startup latch needs to be replaced with something that enforces ordering at the right granularity: per partition, per segment transition, not once at boot.
 
-The correct shape is a per-partition gate that blocks a new consuming segment from starting until the prior segment's state transition has been fully registered in the upsert metadata manager. Such a gate needs two cooperating halves: a blocking wait called before consumption begins, and a signal emitted when the prior segment's transition completes. Both halves must cover every exit path: success, failure, and the skip-because-already-done case that tripped Server 1.
+The correct shape is a per-partition gate that blocks a new consuming segment from starting until the prior segment's state transition has been fully registered in the upsert metadata manager. Such a gate needs two cooperating halves: a blocking wait called before consumption begins and a signal emitted when the prior segment's transition completes. Both halves must cover every exit path: success, failure, and the skip-because-already-done case that tripped Server 1.
 
 For Pinot, this kind of per-partition, per-segment ordering guarantee needs to apply to all partial upsert and dedup tables, not only tables where it has historically been opt-in. The startup latch can then be retired for these table modes entirely, since the stronger per-segment gate subsumes it.
 
@@ -187,9 +177,9 @@ I like to run repeated chaos-style timing tests around the repaired boundary aft
 
 You cannot design away every race condition but you can design for faster diagnosis. When a worker starts processing, log what state it can see, not only that it started. Include dependency counts and sequence markers that explain readiness at that moment.
 
-In the Pinot incident, the `Taking snapshot for N segments` log line, a count rather than a boolean, was what made the divergence visible in minutes rather than hours. A binary `snapshot taken` log would have been useless. Similarly, `skipUpsert=true` exposed per-segment divergence that the normal upsert view would have hidden entirely. And the Helix message timestamps, creation time and execution start time embedded in each message, made the delay immediately calculable rather than estimated.
+In the Pinot incident, the `Taking snapshot for N segments` log line, a count rather than a boolean, was what made the divergence visible in minutes rather than hours. A binary `snapshot taken` log would have been useless. Similarly, `skipUpsert=true` exposed per-segment divergence that the normal upsert view would have hidden entirely. And the Helix message timestamps, creation time and execution start time embedded in each message, made the delay immediately calculable rather than estimated. We also added metrics to ensure any such inconsistency gets flagged in grafana.
 
-Log counts not booleans. Preserve raw read tools. Record causal identifiers at async boundaries. Those three habits change incident duration more than anything else.
+Log counts not booleans. Preserve raw read tools. Record causal identifiers at async boundaries. Those three habits change incident duration more than anything else. 
 
 ## A compact 2 AM checklist
 
@@ -205,4 +195,4 @@ Race condition debugging is disciplined reconstruction of time. Confirm divergen
 
 The Pinot incident illustrated every step. A `Long.MIN_VALUE` in one field pointed to one missing segment in one snapshot. The snapshot count made the race undeniable. The message timestamps made the delay measurable. And the root cause was a guard enforcing the right property at the wrong scope, startup-global instead of per-partition-per-segment.
 
-When you follow that loop the work becomes calmer. The system may still fail in surprising ways at surprising hours. But the investigation starts from method, and method is what turns a 2 AM into a 3 AM instead of a 7 AM.
+When you follow that loop the work becomes calmer. The system may still fail in surprising ways at surprising hours. But the investigation starts from method and method is what turns a 2 AM into a 3 AM instead of a 7 AM.
