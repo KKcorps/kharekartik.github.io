@@ -449,6 +449,7 @@ const accentPalettes = [
 						{ column: 12, row: 12 },
 					];
 					let frame = 0;
+					let lastFrameTime = 0;
 
 					const getColor = (name, fallback) =>
 						getComputedStyle(root).getPropertyValue(name).trim() || fallback;
@@ -457,7 +458,15 @@ const accentPalettes = [
 						context.fillRect(column * cell + offset, row * cell + offset, size, size);
 					};
 
-					const drawGridWidget = () => {
+					const drawGridWidget = (timestamp = 0) => {
+						if (lastFrameTime === 0) {
+							lastFrameTime = timestamp;
+						}
+
+						const delta = (timestamp - lastFrameTime) / (1000 / 60);
+						lastFrameTime = timestamp;
+						frame += delta * 0.45;
+
 						const accent = getColor('--accent', '#c5ff47');
 						const accentDim = getColor('--accent-dim', 'rgba(197,255,71,0.12)');
 						const widgetBackground = getColor('--about-widget-bg', '#0b0b0b');
@@ -496,8 +505,6 @@ const accentPalettes = [
 								drawCell(point.column, point.row, accent, pulse > 0.75 ? 6 : 5, pulse > 0.75 ? 3 : 3.5);
 							}
 						});
-
-						frame += 1;
 
 						requestAnimationFrame(drawGridWidget);
 					};
@@ -1218,7 +1225,7 @@ const accentPalettes = [
 			}
 
 			.about-header__right {
-				align-self: flex-end;
+				align-self: flex-start;
 			}
 
 			.about-site-title {
