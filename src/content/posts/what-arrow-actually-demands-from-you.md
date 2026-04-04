@@ -1,5 +1,5 @@
 ---
-title: How I performance maxxed apache arrow for Java map reduce
+title: How I performance maxxed Apache Arrow for map reduce
 summary: The art of removing costs you didn't know you were paying on every row
 publishedOn: 2025-07-16
 tags:
