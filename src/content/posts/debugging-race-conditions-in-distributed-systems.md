@@ -1,5 +1,5 @@
 ---
-title: How I Debugged a Race Condition at 2 AM
+title: Me vs a Race Condition at 2 AM
 summary: A real incident walkthrough for when your system is healthy and completely wrong
 publishedOn: 2026-04-02
 tags:
