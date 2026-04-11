@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Concurrent Read/Write Isolation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--w-accent); margin-bottom: 6px; }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.warn { border-color: #e6a64a; }
+  button.warn:hover { color: #e6a64a; border-color: #e6a64a; }
+  button.warn.active { background: #e6a64a; color: #0a0a0a; border-color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// concurrent read/write isolation</div>
+  <div class="widget-subtitle">watch a reader and writer operate simultaneously — toggle isolation to see what breaks</div>
+
+  <svg id="main-svg" viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg">
+    <!-- snapshot boxes -->
+    <text x="260" y="20" text-anchor="middle" fill="#666" font-size="10" font-family="IBM Plex Mono">SNAPSHOT v42</text>
+    <rect x="160" y="28" width="200" height="90" rx="3" fill="none" stroke="#444" stroke-width="1" id="snap-v42"/>
+    <g id="snap42-files"></g>
+
+    <text x="510" y="20" text-anchor="middle" fill="#666" font-size="10" font-family="IBM Plex Mono">SNAPSHOT v43 (new)</text>
+    <rect x="410" y="28" width="200" height="90" rx="3" fill="none" stroke="#222" stroke-width="1" id="snap-v43"/>
+    <g id="snap43-files"></g>
+
+    <!-- reader lane -->
+    <text x="40" y="170" fill="#4a9ee6" font-size="11" font-family="IBM Plex Mono">READER</text>
+    <rect x="40" y="180" width="640" height="50" rx="3" fill="none" stroke="#1a2a3a" stroke-width="1"/>
+    <g id="reader-lane"></g>
+    <text x="360" y="210" text-anchor="middle" fill="#4a9ee6" font-size="10" font-family="IBM Plex Mono" id="reader-status">locked on v42 — consistent view</text>
+
+    <!-- writer lane -->
+    <text x="40" y="260" fill="#e6a64a" font-size="11" font-family="IBM Plex Mono">WRITER</text>
+    <rect x="40" y="270" width="640" height="50" rx="3" fill="none" stroke="#2a1a0a" stroke-width="1"/>
+    <g id="writer-lane"></g>
+    <text x="360" y="300" text-anchor="middle" fill="#e6a64a" font-size="10" font-family="IBM Plex Mono" id="writer-status">writing new files for v43...</text>
+
+    <!-- outcome panel -->
+    <rect x="40" y="350" width="640" height="55" rx="3" fill="none" stroke="#222" stroke-width="1" id="outcome-panel"/>
+    <text x="360" y="372" text-anchor="middle" fill="#888" font-size="11" font-family="IBM Plex Mono" id="outcome-text">reader sees stable v42 while writer builds v43</text>
+    <text x="360" y="390" text-anchor="middle" fill="#555" font-size="9" font-family="IBM Plex Mono" id="outcome-sub">snapshot isolation prevents dirty reads</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-start">▶ start</button>
+    <button id="btn-reset">reset</button>
+    <button id="btn-unsafe" class="warn">isolation OFF</button>
+  </div>
+</div>
+
+<script>
+
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const snap42Files = ['A.parquet', 'B.parquet', 'C.parquet'];
+const snap43Files = ['A.parquet', 'C.parquet', 'D.parquet'];
+
+let isolation = true;
+let animating = false;
+let animFrame;
+let step = 0;
+
+function drawSnapFiles() {
+  const g42 = document.getElementById('snap42-files');
+  const g43 = document.getElementById('snap43-files');
+  g42.innerHTML = ''; g43.innerHTML = '';
+
+  snap42Files.forEach((f, i) => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', 180 + i * 65); t.setAttribute('y', 75);
+    t.setAttribute('fill', ACCENT); t.setAttribute('font-size', '9');
+    t.setAttribute('font-family', 'IBM Plex Mono'); t.textContent = f.split('.')[0];
+    g42.appendChild(t);
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x', 172 + i * 65); r.setAttribute('y', 60);
+    r.setAttribute('width', 50); r.setAttribute('height', 22); r.setAttribute('rx', 2);
+    r.setAttribute('fill', 'none'); r.setAttribute('stroke', ACCENT_DIM);
+    g42.appendChild(r);
+  });
+
+  snap43Files.forEach((f, i) => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', 430 + i * 65); t.setAttribute('y', 75);
+    t.setAttribute('font-size', '9'); t.setAttribute('font-family', 'IBM Plex Mono');
+    t.setAttribute('fill', step >= 3 ? '#e6a64a' : '#333');
+    t.textContent = f.split('.')[0]; t.id = 'f43-' + i;
+    g43.appendChild(t);
+    const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x', 422 + i * 65); r.setAttribute('y', 60);
+    r.setAttribute('width', 50); r.setAttribute('height', 22); r.setAttribute('rx', 2);
+    r.setAttribute('fill', 'none'); r.setAttribute('stroke', step >= 3 ? '#3a2a0a' : '#1a1a1a');
+    r.id = 'r43-' + i;
+    g43.appendChild(r);
+  });
+}
+
+const readerStatus = document.getElementById('reader-status');
+const writerStatus = document.getElementById('writer-status');
+const outcomeText = document.getElementById('outcome-text');
+const outcomeSub = document.getElementById('outcome-sub');
+const outcomePanel = document.getElementById('outcome-panel');
+const snapV43 = document.getElementById('snap-v43');
+
+const steps = [
+  { reader: 'reader locks onto snapshot v42...', writer: 'writer begins preparing new files...', outcome: 'both operating independently', sub: '' },
+  { reader: 'scanning file A from v42...', writer: 'writing D.parquet to storage...', outcome: 'reader sees only v42 files', sub: '' },
+  { reader: 'scanning file B from v42...', writer: 'preparing manifest for v43...', outcome: 'writer\'s new files not yet visible to anyone', sub: '' },
+  { reader: 'scanning file C from v42...', writer: 'atomic commit → v43 published!', outcome: 'v43 now exists but reader still on v42', sub: 'next reader will see v43' },
+  { reader: 'query complete — consistent v42 result ✓', writer: 'done — v43 is now latest', outcome: 'reader got a fully consistent view the entire time', sub: 'snapshot isolation working correctly' },
+];
+
+const unsafeSteps = [
+  { reader: 'reader lists files in directory...', writer: 'writer begins preparing new files...', outcome: 'no snapshot isolation — reader sees raw files', sub: '' },
+  { reader: 'sees A, B, C — starts scanning A...', writer: 'writing D.parquet to storage...', outcome: 'file listing is live — changes are visible immediately', sub: '' },
+  { reader: 'sees A, B, C, D — mid-scan confusion!', writer: 'removing B.parquet...', outcome: '⚠ reader sees a file that appeared mid-query', sub: 'D wasn\'t there when scan started' },
+  { reader: 'B disappeared mid-scan! partial read!', writer: 'done — but reader saw inconsistent state', outcome: '⚠ reader got half-old, half-new data', sub: 'classic dirty read from concurrent access' },
+  { reader: 'query result is WRONG — mixed versions ✗', writer: 'done', outcome: '✗ reader returned corrupted results', sub: 'this is why snapshot isolation exists' },
+];
+
+function reset() {
+  step = 0; animating = false;
+  if (animFrame) clearTimeout(animFrame);
+  readerStatus.textContent = 'idle'; readerStatus.setAttribute('fill', '#4a9ee6');
+  writerStatus.textContent = 'idle'; writerStatus.setAttribute('fill', '#e6a64a');
+  outcomeText.textContent = 'press start to begin'; outcomeSub.textContent = '';
+  outcomePanel.setAttribute('stroke', '#222');
+  snapV43.setAttribute('stroke', '#222');
+  drawSnapFiles();
+  document.getElementById('btn-start').textContent = '▶ start';
+}
+
+function runStep() {
+  const ss = isolation ? steps : unsafeSteps;
+  if (step >= ss.length) { animating = false; document.getElementById('btn-start').textContent = '▶ start'; return; }
+
+  const s = ss[step];
+  readerStatus.textContent = s.reader;
+  writerStatus.textContent = s.writer;
+  outcomeText.textContent = s.outcome;
+  outcomeSub.textContent = s.sub;
+
+  if (!isolation && step >= 2) {
+    readerStatus.setAttribute('fill', '#e64a4a');
+    outcomeText.setAttribute('fill', '#e64a4a');
+    outcomePanel.setAttribute('stroke', '#e64a4a');
+  } else {
+    readerStatus.setAttribute('fill', '#4a9ee6');
+    outcomeText.setAttribute('fill', '#888');
+    outcomePanel.setAttribute('stroke', '#222');
+  }
+
+  if (step >= 3) {
+    snapV43.setAttribute('stroke', '#e6a64a');
+  }
+  drawSnapFiles();
+  step++;
+  animFrame = setTimeout(runStep, 1800);
+}
+
+document.getElementById('btn-start').addEventListener('click', function() {
+  if (animating) { animating = false; clearTimeout(animFrame); this.textContent = '▶ start'; return; }
+  reset(); animating = true; this.textContent = '⏸ pause';
+  runStep();
+});
+
+document.getElementById('btn-reset').addEventListener('click', reset);
+
+document.getElementById('btn-unsafe').addEventListener('click', function() {
+  isolation = !isolation;
+  this.textContent = isolation ? 'isolation OFF' : 'isolation ON';
+  this.classList.toggle('active', !isolation);
+  reset();
+});
+
+reset();
+</script>
+</body>
+</html>

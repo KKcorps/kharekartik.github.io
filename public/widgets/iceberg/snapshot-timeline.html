@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snapshot Timeline Scrubber</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    min-height: 100vh;
+  }
+  .widget {
+    width: 100%;
+    max-width: 720px;
+  }
+  .widget-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--w-accent);
+    margin-bottom: 6px;
+  }
+  .widget-subtitle {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 24px;
+  }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    align-items: center;
+  }
+  button {
+    background: transparent;
+    border: 1px solid #333;
+    color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  input[type="range"] {
+    -webkit-appearance: none; flex: 1; height: 4px; background: #222;
+    border-radius: 2px; outline: none; margin: 0 4px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; background: var(--w-accent);
+    border-radius: 50%; cursor: pointer; border: 2px solid #0a0a0a;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; background: var(--w-accent);
+    border-radius: 50%; cursor: pointer; border: 2px solid #0a0a0a;
+  }
+  .slider-labels { display: flex; justify-content: space-between; font-size: 10px; color: #555; margin-top: 2px; }
+  .version-label {
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+  }
+  .version-label span { color: var(--w-accent); }
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 14px;
+    font-size: 11px;
+    color: #666;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// snapshot timeline</div>
+  <div class="widget-subtitle">drag the slider to time-travel between table versions</div>
+
+  <svg id="timeline-svg" viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
+    <!-- timeline track -->
+    <line x1="60" y1="50" x2="660" y2="50" stroke="#222" stroke-width="2"/>
+
+    <!-- version markers + labels -->
+    <g id="markers"></g>
+
+    <!-- scrubber handle -->
+    <g id="scrubber" cursor="grab">
+      <line x1="60" y1="30" x2="60" y2="70" style="stroke:var(--w-accent)" stroke-width="2"/>
+      <polygon points="60,28 52,18 68,18" style="fill:var(--w-accent)"/>
+      <text x="60" y="12" text-anchor="middle" style="fill:var(--w-accent)" font-size="10" font-family="IBM Plex Mono">▾</text>
+    </g>
+
+    <!-- file display area -->
+    <text x="60" y="105" fill="#666" font-size="10" font-family="IBM Plex Mono">ACTIVE DATA FILES</text>
+    <g id="file-area"></g>
+
+    <!-- change log -->
+    <text x="60" y="240" fill="#666" font-size="10" font-family="IBM Plex Mono">CHANGE LOG</text>
+    <text id="changelog" x="60" y="260" fill="#888" font-size="12" font-family="IBM Plex Mono"></text>
+  </svg>
+
+  <div class="controls">
+    <input type="range" id="version-slider" min="0" max="3" value="0" step="1">
+    <button id="btn-play">▶ play</button>
+    <div class="version-label">viewing: <span id="ver-display">v41</span></div>
+  </div>
+  <div class="slider-labels">
+    <span>v41</span><span>v42</span><span>v43</span><span>v44</span>
+  </div>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:var(--w-accent)"></span>active file</span>
+    <span><span class="legend-dot" style="background:#333"></span>removed</span>
+    <span><span class="legend-dot" style="background:#e64a4a"></span>has deletes</span>
+  </div>
+</div>
+
+<script>
+
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const versions = [
+  { id: 'v41', label: 'v41', files: ['A','B','C'], deletes: [], log: 'initial load — add files A, B, C' },
+  { id: 'v42', label: 'v42', files: ['A','C','D'], deletes: [], log: 'upsert — remove B, add D' },
+  { id: 'v43', label: 'v43', files: ['A','C','D'], deletes: ['D'], log: 'delete rows in D via delete vector' },
+  { id: 'v44', label: 'v44', files: ['E'], deletes: [], log: 'compaction — merge A,C,D → E (live rows only)' },
+];
+
+const allFiles = ['A','B','C','D','E'];
+const svg = document.getElementById('timeline-svg');
+const markersG = document.getElementById('markers');
+const fileArea = document.getElementById('file-area');
+const changelog = document.getElementById('changelog');
+const scrubber = document.getElementById('scrubber');
+const verDisplay = document.getElementById('ver-display');
+
+const xStart = 60, xEnd = 660;
+const versionXs = versions.map((_, i) => xStart + i * ((xEnd - xStart) / (versions.length - 1)));
+
+// draw markers
+versions.forEach((v, i) => {
+  const x = versionXs[i];
+  const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  circle.setAttribute('cx', x); circle.setAttribute('cy', 50); circle.setAttribute('r', 6);
+  circle.setAttribute('fill', '#222'); circle.setAttribute('stroke', '#444'); circle.setAttribute('stroke-width', '1.5');
+  circle.setAttribute('data-idx', i); circle.style.cursor = 'pointer';
+  circle.id = 'marker-' + i;
+  markersG.appendChild(circle);
+
+  const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+  txt.setAttribute('x', x); txt.setAttribute('y', 80);
+  txt.setAttribute('text-anchor', 'middle'); txt.setAttribute('fill', '#555');
+  txt.setAttribute('font-size', '11'); txt.setAttribute('font-family', 'IBM Plex Mono');
+  txt.textContent = v.label; txt.id = 'mlabel-' + i;
+  markersG.appendChild(txt);
+
+  circle.addEventListener('click', () => setVersion(i));
+});
+
+let currentIdx = 0;
+
+function setVersion(idx) {
+  currentIdx = Math.max(0, Math.min(versions.length - 1, idx));
+  const v = versions[currentIdx];
+  const x = versionXs[currentIdx];
+
+  // move scrubber
+  scrubber.querySelector('line').setAttribute('x1', x);
+  scrubber.querySelector('line').setAttribute('x2', x);
+  scrubber.querySelector('polygon').setAttribute('points', `${x},28 ${x-8},18 ${x+8},18`);
+
+  // update markers
+  versions.forEach((_, i) => {
+    const m = document.getElementById('marker-' + i);
+    const l = document.getElementById('mlabel-' + i);
+    if (i === currentIdx) {
+      m.setAttribute('fill', ACCENT); m.setAttribute('stroke', ACCENT); m.setAttribute('r', 8);
+      l.setAttribute('fill', ACCENT);
+    } else {
+      m.setAttribute('fill', '#222'); m.setAttribute('stroke', '#444'); m.setAttribute('r', 6);
+      l.setAttribute('fill', '#555');
+    }
+  });
+
+  // draw files
+  fileArea.innerHTML = '';
+  allFiles.forEach((f, i) => {
+    const bx = 60 + i * 130, by = 120;
+    const active = v.files.includes(f);
+    const hasDelete = v.deletes.includes(f);
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', bx); rect.setAttribute('y', by);
+    rect.setAttribute('width', 110); rect.setAttribute('height', 70); rect.setAttribute('rx', 3);
+
+    if (active && hasDelete) {
+      rect.setAttribute('fill', 'none'); rect.setAttribute('stroke', '#e64a4a'); rect.setAttribute('stroke-width', '1.5');
+      rect.setAttribute('stroke-dasharray', '4,3');
+    } else if (active) {
+      rect.setAttribute('fill', 'none'); rect.setAttribute('stroke', ACCENT); rect.setAttribute('stroke-width', '1.5');
+    } else {
+      rect.setAttribute('fill', 'none'); rect.setAttribute('stroke', '#222'); rect.setAttribute('stroke-width', '1');
+    }
+
+    fileArea.appendChild(rect);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+    label.setAttribute('x', bx + 55); label.setAttribute('y', by + 30);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('font-size', '16'); label.setAttribute('font-family', 'IBM Plex Mono');
+    label.setAttribute('fill', active ? (hasDelete ? '#e64a4a' : ACCENT) : '#333');
+    label.textContent = f + '.parquet';
+    fileArea.appendChild(label);
+
+    if (hasDelete) {
+      const dtxt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      dtxt.setAttribute('x', bx + 55); dtxt.setAttribute('y', by + 52);
+      dtxt.setAttribute('text-anchor', 'middle');
+      dtxt.setAttribute('font-size', '9'); dtxt.setAttribute('font-family', 'IBM Plex Mono');
+      dtxt.setAttribute('fill', '#e64a4a');
+      dtxt.textContent = '+ delete vector';
+      fileArea.appendChild(dtxt);
+    }
+
+    if (!active) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1', bx + 8); line.setAttribute('y1', by + 35);
+      line.setAttribute('x2', bx + 102); line.setAttribute('y2', by + 35);
+      line.setAttribute('stroke', '#333'); line.setAttribute('stroke-width', '1');
+      fileArea.appendChild(line);
+    }
+  });
+
+  changelog.textContent = v.log;
+  verDisplay.textContent = v.label;
+  slider.value = currentIdx;
+}
+
+// drag support
+let dragging = false;
+scrubber.addEventListener('mousedown', () => dragging = true);
+scrubber.addEventListener('touchstart', () => dragging = true);
+document.addEventListener('mouseup', () => dragging = false);
+document.addEventListener('touchend', () => dragging = false);
+
+function handleDrag(clientX) {
+  if (!dragging) return;
+  const rect = svg.getBoundingClientRect();
+  const svgX = (clientX - rect.left) / rect.width * 720;
+  let closest = 0, minDist = Infinity;
+  versionXs.forEach((vx, i) => { const d = Math.abs(svgX - vx); if (d < minDist) { minDist = d; closest = i; }});
+  setVersion(closest);
+}
+document.addEventListener('mousemove', e => handleDrag(e.clientX));
+document.addEventListener('touchmove', e => handleDrag(e.touches[0].clientX));
+
+// slider
+const slider = document.getElementById('version-slider');
+slider.addEventListener('input', () => setVersion(parseInt(slider.value)));
+
+let playing = false, playInterval;
+document.getElementById('btn-play').addEventListener('click', function() {
+  playing = !playing;
+  this.textContent = playing ? '⏸ pause' : '▶ play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    playInterval = setInterval(() => {
+      setVersion((currentIdx + 1) % versions.length);
+    }, 1500);
+  } else clearInterval(playInterval);
+});
+
+setVersion(0);
+</script>
+</body>
+</html>

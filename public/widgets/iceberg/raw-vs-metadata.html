@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Raw Lake vs Metadata-First Read</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--w-accent); margin-bottom: 6px; }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .mode-label { font-size: 12px; color: #888; margin-left: auto; }
+  .mode-label span { color: var(--w-accent); }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// raw lake vs metadata-first read</div>
+  <div class="widget-subtitle">toggle between how a raw lake reader and a metadata-aware reader see the same files</div>
+
+  <svg id="main-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+    <!-- S3 bucket label -->
+    <text x="360" y="24" text-anchor="middle" fill="#444" font-size="10" font-family="IBM Plex Mono">s3://analytics-lake/orders/</text>
+
+    <!-- file grid -->
+    <g id="file-grid"></g>
+
+    <!-- reader view panel -->
+    <rect x="40" y="310" width="640" height="70" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="330" text-anchor="middle" fill="#666" font-size="10" font-family="IBM Plex Mono" id="reader-label">READER SEES</text>
+    <text x="360" y="355" text-anchor="middle" fill="#888" font-size="12" font-family="IBM Plex Mono" id="reader-result"></text>
+    <text x="360" y="372" text-anchor="middle" fill="#555" font-size="10" font-family="IBM Plex Mono" id="reader-note"></text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-raw" class="active">raw lake</button>
+    <button id="btn-meta">metadata-first</button>
+    <button id="btn-midflight">simulate mid-write</button>
+    <div class="mode-label">mode: <span id="mode-display">raw lake</span></div>
+  </div>
+</div>
+
+<script>
+
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const files = [
+  { name: 'part-001.parquet', status: 'valid', date: '03-28' },
+  { name: 'part-002.parquet', status: 'valid', date: '03-28' },
+  { name: 'part-003.parquet', status: 'replaced', date: '03-29' },
+  { name: 'part-004.parquet', status: 'valid', date: '03-29' },
+  { name: 'part-005.parquet', status: 'partial', date: '03-30' },
+  { name: 'part-006.parquet', status: 'valid', date: '03-30' },
+  { name: '.part-007.tmp', status: 'temp', date: '03-31' },
+  { name: 'part-008.parquet', status: 'valid', date: '03-31' },
+  { name: 'part-003-v2.parquet', status: 'valid', date: '03-31' },
+  { name: '_metadata_lock', status: 'lock', date: '' },
+];
+
+const grid = document.getElementById('file-grid');
+const readerResult = document.getElementById('reader-result');
+const readerNote = document.getElementById('reader-note');
+const readerLabel = document.getElementById('reader-label');
+const modeDisplay = document.getElementById('mode-display');
+
+let mode = 'raw';
+let midFlight = false;
+
+const statusColors = {
+  valid: { raw: ACCENT, meta: ACCENT },
+  replaced: { raw: ACCENT, meta: '#333' },
+  partial: { raw: '#e6a64a', meta: '#333' },
+  temp: { raw: '#e6a64a', meta: '#1a1a1a' },
+  lock: { raw: '#e64a4a', meta: '#1a1a1a' },
+};
+
+function render() {
+  grid.innerHTML = '';
+  const cols = 5, cw = 124, ch = 62, ox = 40, oy = 40;
+
+  files.forEach((f, i) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = ox + col * (cw + 8), y = oy + row * (ch + 8);
+
+    const isVisible = mode === 'raw' || f.status === 'valid';
+    const borderColor = mode === 'raw' ? (statusColors[f.status]?.raw || '#444') : (statusColors[f.status]?.meta || '#222');
+    const opacity = isVisible ? 1 : 0.2;
+    const fillBg = (mode === 'meta' && !isVisible) ? '#0a0a0a' : 'none';
+
+    // flicker effect for mid-flight partial files
+    let flickerClass = '';
+    if (midFlight && f.status === 'partial' && mode === 'raw') {
+      flickerClass = 'flicker';
+    }
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', x); rect.setAttribute('y', y);
+    rect.setAttribute('width', cw); rect.setAttribute('height', ch); rect.setAttribute('rx', 2);
+    rect.setAttribute('fill', fillBg); rect.setAttribute('stroke', borderColor);
+    rect.setAttribute('stroke-width', isVisible ? '1.5' : '1');
+    rect.setAttribute('opacity', opacity);
+    if (f.status === 'replaced' && mode === 'raw') rect.setAttribute('stroke-dasharray', '4,3');
+    grid.appendChild(rect);
+
+    const nameEl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    nameEl.setAttribute('x', x + cw/2); nameEl.setAttribute('y', y + 25);
+    nameEl.setAttribute('text-anchor', 'middle'); nameEl.setAttribute('font-size', '9');
+    nameEl.setAttribute('font-family', 'IBM Plex Mono');
+    nameEl.setAttribute('fill', isVisible ? '#e0e0e0' : '#333');
+    nameEl.textContent = f.name;
+    grid.appendChild(nameEl);
+
+    if (!isVisible && mode === 'meta') {
+      const strike = document.createElementNS('http://www.w3.org/2000/svg','line');
+      strike.setAttribute('x1', x + 10); strike.setAttribute('y1', y + ch/2);
+      strike.setAttribute('x2', x + cw - 10); strike.setAttribute('y2', y + ch/2);
+      strike.setAttribute('stroke', '#e64a4a'); strike.setAttribute('stroke-width', '1');
+      strike.setAttribute('opacity', '0.5');
+      grid.appendChild(strike);
+    }
+
+    const tagEl = document.createElementNS('http://www.w3.org/2000/svg','text');
+    tagEl.setAttribute('x', x + cw/2); tagEl.setAttribute('y', y + 42);
+    tagEl.setAttribute('text-anchor', 'middle'); tagEl.setAttribute('font-size', '8');
+    tagEl.setAttribute('font-family', 'IBM Plex Mono');
+    const tagLabels = { valid: '', replaced: 'superseded', partial: 'partial write', temp: 'temp file', lock: 'lock file' };
+    tagEl.setAttribute('fill', f.status === 'valid' ? '#444' : (isVisible ? '#e6a64a' : '#333'));
+    tagEl.textContent = mode === 'meta' && !isVisible ? 'excluded' : (tagLabels[f.status] || '');
+    grid.appendChild(tagEl);
+
+    // metadata pointer for valid files in meta mode
+    if (mode === 'meta' && isVisible) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      dot.setAttribute('cx', x + cw - 8); dot.setAttribute('cy', y + 8); dot.setAttribute('r', 3);
+      dot.setAttribute('fill', ACCENT);
+      grid.appendChild(dot);
+    }
+  });
+
+  // metadata bar in meta mode
+  if (mode === 'meta') {
+    const metaBar = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    metaBar.setAttribute('x', 40); metaBar.setAttribute('y', 185);
+    metaBar.setAttribute('width', 640); metaBar.setAttribute('height', 28); metaBar.setAttribute('rx', 2);
+    metaBar.setAttribute('fill', 'none'); metaBar.setAttribute('stroke', ACCENT);
+    metaBar.setAttribute('stroke-width', '1'); metaBar.setAttribute('stroke-dasharray', '2,4');
+    grid.appendChild(metaBar);
+    const metaTxt = document.createElementNS('http://www.w3.org/2000/svg','text');
+    metaTxt.setAttribute('x', 360); metaTxt.setAttribute('y', 204);
+    metaTxt.setAttribute('text-anchor', 'middle'); metaTxt.setAttribute('font-size', '10');
+    metaTxt.setAttribute('font-family', 'IBM Plex Mono'); metaTxt.setAttribute('fill', ACCENT);
+    metaTxt.textContent = 'snapshot v43 → 5 valid files: part-001, 002, 004, 006, 008, 003-v2';
+    grid.appendChild(metaTxt);
+  }
+
+  // reader result
+  const validCount = files.filter(f => f.status === 'valid').length;
+  if (mode === 'raw') {
+    readerLabel.textContent = 'RAW READER SEES';
+    readerResult.textContent = `${files.length} files listed from s3 — reader must guess which are valid`;
+    readerResult.setAttribute('fill', '#e6a64a');
+    readerNote.textContent = midFlight ? '⚠ writer in progress — partial + temp files visible' : 'includes superseded, partial, temp, and lock files';
+  } else {
+    readerLabel.textContent = 'METADATA-FIRST READER SEES';
+    readerResult.textContent = `${validCount} files — exactly those referenced by snapshot v43`;
+    readerResult.setAttribute('fill', ACCENT);
+    readerNote.textContent = 'invalid files are invisible to the query engine';
+  }
+}
+
+document.getElementById('btn-raw').addEventListener('click', function() {
+  mode = 'raw'; modeDisplay.textContent = 'raw lake';
+  this.classList.add('active'); document.getElementById('btn-meta').classList.remove('active');
+  render();
+});
+document.getElementById('btn-meta').addEventListener('click', function() {
+  mode = 'meta'; modeDisplay.textContent = 'metadata-first';
+  this.classList.add('active'); document.getElementById('btn-raw').classList.remove('active');
+  render();
+});
+document.getElementById('btn-midflight').addEventListener('click', function() {
+  midFlight = !midFlight;
+  this.classList.toggle('active', midFlight);
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
