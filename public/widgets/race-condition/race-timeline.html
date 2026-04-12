@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Race Timeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// race timeline comparison</div>
+  <div class="widget-subtitle">step through to compare healthy vs broken server event ordering</div>
+
+  <svg id="main-svg" viewBox="0 0 720 440" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="392" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="417" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">step through to see the ordering divergence</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&larr; prev</button>
+    <button id="btn-next">next &rarr;</button>
+    <button id="btn-play">&#9654; play</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>step: <span id="stat-step">0</span> / 7</div>
+    <div>divergence: <span id="stat-diverge">none yet</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. Timeline steps
+const STEPS = [
+  {
+    id: 0,
+    time: 'T+00:00',
+    healthy: { event: 'CONSUMING\u2192ONLINE for SEG_M', detail: 'Executes immediately', state: 'ok' },
+    broken:  { event: 'OFFLINE\u2192CONSUMING for SEG_M', detail: 'SCHEDULED — stuck in message queue', state: 'warn' },
+    status: 'Helix sends state transition to all servers. Server 1\'s message gets queued.',
+    diverged: false
+  },
+  {
+    id: 1,
+    time: 'T+00:01',
+    healthy: { event: 'Snapshot for SEG_M1 starts', detail: 'N segments in snapshot', state: 'ok' },
+    broken:  { event: '(waiting)', detail: 'SEG_M transition still stuck in queue', state: 'warn' },
+    status: 'Healthy servers take snapshot with all segments. Server 1 is still waiting.',
+    diverged: false
+  },
+  {
+    id: 2,
+    time: 'T+00:01',
+    healthy: { event: 'SEG_M persisted in snapshot', detail: '~12,000 doc IDs registered', state: 'ok' },
+    broken:  { event: '(waiting)', detail: 'SEG_M still not in metadata manager', state: 'warn' },
+    status: 'SEG_M\'s keys are in the metadata on healthy servers. Missing on Server 1.',
+    diverged: false
+  },
+  {
+    id: 3,
+    time: 'T+01:00',
+    healthy: { event: 'SEG_M1 starts consuming', detail: '~7K events, SEG_M present in metadata', state: 'ok' },
+    broken:  { event: '(waiting)', detail: 'SEG_M transition STILL stuck in queue', state: 'warn' },
+    status: 'Healthy servers begin consuming with full metadata. Server 1 still blocked.',
+    diverged: false
+  },
+  {
+    id: 4,
+    time: 'T+55:45',
+    healthy: { event: '(consuming normally)', detail: 'Partial upsert merges are correct', state: 'ok' },
+    broken:  { event: 'SEG_M transition finally executes', detail: '"Segment already completed, skipping"', state: 'error' },
+    status: 'After ~56 min delay, SEG_M transition runs but is skipped as already completed.',
+    diverged: true
+  },
+  {
+    id: 5,
+    time: 'T+55:47',
+    healthy: { event: '(consuming normally)', detail: 'All merges use SEG_M keys', state: 'ok' },
+    broken:  { event: 'Snapshot for SEG_M1 starts', detail: 'N-1 segments — SEG_M missing!', state: 'error' },
+    status: 'Server 1 takes snapshot with N-1 segments. SEG_M is absent from metadata.',
+    diverged: true
+  },
+  {
+    id: 6,
+    time: 'T+56:50',
+    healthy: { event: '(consuming normally)', detail: 'Correct merged values', state: 'ok' },
+    broken:  { event: 'SEG_M1 starts consuming', detail: '~32K events WITHOUT SEG_M keys', state: 'error' },
+    status: 'Server 1 consumes 32K events. Partial upsert merges produce Long.MIN_VALUE.',
+    diverged: true
+  },
+  {
+    id: 7,
+    time: 'T+83:42',
+    healthy: { event: '(all segments consistent)', detail: 'mergedTimestamp values correct', state: 'ok' },
+    broken:  { event: 'SEG_M added to metadata', detail: '27 min after SEG_M1 started — too late', state: 'error' },
+    status: 'SEG_M finally in metadata, but 32K rows already written with wrong merged values.',
+    diverged: true
+  }
+];
+
+// 2. State
+let currentStep = 0;
+let playing = false;
+let interval;
+
+// 3. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+const statStep = document.getElementById('stat-step');
+const statDiverge = document.getElementById('stat-diverge');
+
+// Layout
+const LANE_W = 300;
+const LANE_GAP = 40;
+const LEFT_X = (720 - LANE_W * 2 - LANE_GAP) / 2;
+const RIGHT_X = LEFT_X + LANE_W + LANE_GAP;
+const EVENT_H = 38;
+const EVENT_GAP = 6;
+const TIMELINE_START_Y = 40;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function stateColor(state) {
+  if (state === 'ok') return ACCENT;
+  if (state === 'warn') return '#e6a64a';
+  if (state === 'error') return '#e64a4a';
+  return '#333';
+}
+
+function stateFill(state) {
+  if (state === 'ok') return ACCENT_FILL;
+  if (state === 'warn') return '#1a150a';
+  if (state === 'error') return '#1a0a0a';
+  return 'none';
+}
+
+// 4. Render
+function render() {
+  content.innerHTML = '';
+  const step = STEPS[currentStep];
+
+  // Lane headers
+  addText(content, LEFT_X + LANE_W / 2, 18, 'HEALTHY SERVERS (0, 2, 3)', {
+    fill: ACCENT, size: '9', anchor: 'middle'
+  });
+  addText(content, RIGHT_X + LANE_W / 2, 18, 'SERVER 1 (BROKEN)', {
+    fill: currentStep >= 4 ? '#e64a4a' : '#e6a64a', size: '9', anchor: 'middle'
+  });
+
+  // Vertical lane divider
+  const divX = LEFT_X + LANE_W + LANE_GAP / 2;
+  content.appendChild(makeSvgEl('line', {
+    x1: divX, y1: 28, x2: divX, y2: 380,
+    stroke: '#1a1a1a', 'stroke-width': 1, 'stroke-dasharray': '4,4'
+  }));
+
+  // Draw events up to current step
+  for (let i = 0; i <= currentStep && i < STEPS.length; i++) {
+    const s = STEPS[i];
+    const isCurrent = i === currentStep;
+    const isPast = i < currentStep;
+    const ey = TIMELINE_START_Y + i * (EVENT_H + EVENT_GAP);
+
+    // Time label in center
+    addText(content, divX, ey + EVENT_H / 2 + 4, s.time, {
+      fill: isCurrent ? '#e0e0e0' : '#444', size: '8', anchor: 'middle'
+    });
+
+    // Left lane (healthy)
+    const hColor = isCurrent ? stateColor(s.healthy.state) : (isPast ? ACCENT_DIM : '#222');
+    const hFill = isCurrent ? stateFill(s.healthy.state) : (isPast ? ACCENT_FILL_DARK : 'none');
+
+    content.appendChild(makeSvgEl('rect', {
+      x: LEFT_X, y: ey, width: LANE_W, height: EVENT_H, rx: 2,
+      fill: hFill, stroke: hColor, 'stroke-width': isCurrent ? 1.5 : 1
+    }));
+
+    addText(content, LEFT_X + 8, ey + 15, s.healthy.event, {
+      fill: isCurrent ? stateColor(s.healthy.state) : (isPast ? ACCENT_MID : '#444'), size: '9'
+    });
+    addText(content, LEFT_X + 8, ey + 30, s.healthy.detail, {
+      fill: isCurrent ? '#888' : '#333', size: '8'
+    });
+
+    // Right lane (broken)
+    const bColor = isCurrent ? stateColor(s.broken.state) : (isPast ? (s.broken.state === 'error' ? '#3a1a1a' : '#332a0a') : '#222');
+    const bFill = isCurrent ? stateFill(s.broken.state) : (isPast ? (s.broken.state === 'error' ? '#120808' : '#12100a') : 'none');
+
+    content.appendChild(makeSvgEl('rect', {
+      x: RIGHT_X, y: ey, width: LANE_W, height: EVENT_H, rx: 2,
+      fill: bFill, stroke: bColor, 'stroke-width': isCurrent ? 1.5 : 1
+    }));
+
+    addText(content, RIGHT_X + 8, ey + 15, s.broken.event, {
+      fill: isCurrent ? stateColor(s.broken.state) : (isPast ? '#555' : '#444'), size: '9'
+    });
+    addText(content, RIGHT_X + 8, ey + 30, s.broken.detail, {
+      fill: isCurrent ? '#888' : '#333', size: '8'
+    });
+
+    // Divergence marker
+    if (s.diverged && isCurrent) {
+      addText(content, RIGHT_X + LANE_W - 8, ey + 12, '\u26A0', {
+        fill: '#e64a4a', size: '10', anchor: 'end'
+      });
+    }
+  }
+
+  // Status
+  statusText.textContent = step.status;
+  statusText.setAttribute('fill', step.diverged ? '#e64a4a' : '#888');
+
+  // Stats
+  statStep.textContent = currentStep;
+  if (step.diverged) {
+    statDiverge.textContent = 'DETECTED';
+    statDiverge.style.color = '#e64a4a';
+    statDiverge.className = 'del';
+  } else {
+    statDiverge.textContent = 'none yet';
+    statDiverge.style.color = '';
+    statDiverge.className = '';
+  }
+}
+
+// 5. Event handlers
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (currentStep > 0) { currentStep--; render(); }
+});
+
+document.getElementById('btn-play').addEventListener('click', function () {
+  playing = !playing;
+  this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+      else {
+        clearInterval(interval);
+        playing = false;
+        document.getElementById('btn-play').textContent = '\u25B6 play';
+        document.getElementById('btn-play').classList.remove('active');
+      }
+    }, 1800);
+  } else {
+    clearInterval(interval);
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0;
+  playing = false;
+  clearInterval(interval);
+  document.getElementById('btn-play').textContent = '\u25B6 play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+});
+
+// 6. Init
+render();
+</script>
+</body>
+</html>

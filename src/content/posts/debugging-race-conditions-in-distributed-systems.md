@@ -73,6 +73,8 @@ ORDER BY $segmentName DESC
 
 Crucially, this anomaly appeared only on Server 1. Servers 0, 2, and 3 had consistent merged values for the same key. One server disagreed. That asymmetry was the entry point. From here the investigation had a precise scope.
 
+<iframe src="/widgets/race-condition/replica-divergence.html" width="100%" height="530" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 ## Building a timeline that can survive scrutiny
 
 After scope is reduced I build a timeline with hard timestamps. This is the most important part of the entire process. The goal is to find the first moment where ordering diverged between the broken node and a healthy one. Everything before that moment is setup and everything after it is consequence.
@@ -126,6 +128,8 @@ T+83:42 — SEG_M finally added to upsert metadata via CONSUMING→ONLINE
            (27 minutes after SEG_M1 already started consuming)
 ```
 
+<iframe src="/widgets/race-condition/race-timeline.html" width="100%" height="580" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 The snapshot count was the concrete tell. Every other server logged `Taking snapshot for N segments`. Server 1 logged `Taking snapshot for N-1 segments`. One missing segment in one log line made the ordering failure undeniable rather than speculative.
 
 I also noticed that SEG\_M never started consuming data on this server (since OFFLINE -> CONSUMING state transition was skipped). And when we finally downloaded the data committed by other servers for this segment (CONSUMING -> ONLINE), the SEG\_M1 had already started cosuming at this point. 
@@ -151,11 +155,15 @@ The latch is one-way. Once it flips to `true` it never rechecks. All four server
 
 The gate was permanently open across the entire cluster. There was no mechanism to make a newly created consuming segment wait for the prior segment to finish registering in the upsert metadata manager. The guard existed and enforced exactly the wrong granularity. It was global and one shot while the correctness requirement was per partition and per segment-transition.
 
+<iframe src="/widgets/race-condition/latch-vs-gate.html" width="100%" height="530" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 ### How Server 1's bad data became everyone's problem
 
 When SEG\_M1's commit cycle ran the next day, the controller selected Server 1 as the winning replica (since it had consumed to same offset as other servers) and pushed its segment to the distributed store. The other servers also had consumed to exact same offset so they were told to keep their local versions as long as they were same as Server-1s.
 
 However, since Server 1 had consumed without SEG\_M's keys, its segment had materially different content. The other three servers detected a checksum mismatch while retaining segment and logged a warning about this. They then proceeded to replace their local correct version with incorrect version from Server 1 present in distributed store.
+
+<iframe src="/widgets/race-condition/bad-data-spread.html" width="100%" height="560" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 ## Practical containment while investigation is in progress
 
