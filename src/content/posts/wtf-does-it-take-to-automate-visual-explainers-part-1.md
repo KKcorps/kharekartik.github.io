@@ -144,11 +144,31 @@ def get_tools(task_mode: str = "plan"):
     return base_tools
 ```
 
-This split was the first real architectural decision. Plan mode is about understanding. Build mode is about construction. Letting the agent do both at once produced chaos because it would optimize for whatever looked like progress, which usually meant writing code before understanding the problem.
+Why tools were scoped per mode is explained in the next section.
 
 ---
 
-## The build prompt: PixiJS and a prayer
+## Plan, build, then phases inside build
+
+This is probably the most important architectural story of the first month, and it happened in layers.
+
+### The plan/build split
+
+The initial driver ran a single session. You gave it a codebase and a request, and the agent was supposed to explore the code, understand the system, design a simulator, and build it. All in one run.
+
+That did not work. The agent would read two files, form a half-baked understanding, and immediately start writing PixiJS code. It was like asking someone to read a textbook and write an exam in the same sitting while they are still on chapter 2. The exploration was shallow because the agent was in a hurry to start building, and the building was bad because the exploration was shallow.
+
+The fix was separating the workflow into two distinct runs with a design document as the handoff artifact.
+
+**Plan mode** (`--task plan`): the agent explores the codebase, reads files, builds understanding incrementally using the `update_knowledge` scratchpad, and produces a design document in `docs/`. It has no access to build tools like `validate_html` or the plan checklist. Its only job is to understand the system and write a spec. The design document had to cover specific sections: an overview with learning goals, the controls available to the user (buttons, sliders, toggles), the simulator's state model, clock and tick semantics (what changes each frame), every screen element and its position, how the simulator reacts to user interactions, failure and edge cases, and a traceability table mapping code elements to simulator elements. It also required a PixiJS plan: scenes, ticker behavior, a display tree layout with no overlap, an interaction map from controls to reactions, and a performance budget covering target FPS, max sprites, and draw call strategy. If the design doc was vague on any of these the build agent would fill in the gaps with hallucinations, so the plan prompt was strict about non-placeholder text in every section.
+
+**Build mode** (`--task build`): a fresh agent session starts from scratch. It reads the design document produced by the plan run and implements it. It has no access to `update_knowledge` because it does not need to explore anymore. Instead it gets the `update_plan` tool for tracking its checklist and `validate_html` for checking its output. The design document is the contract. The build agent's job is to fulfill it.
+
+Two runs. Two prompts. Two different tool sets. The design document was the only thing that crossed the boundary. This forced the plan agent to actually commit its understanding to paper instead of carrying it as vague context in the conversation history. And it forced the build agent to work from a spec instead of making things up as it went.
+
+One thing I noticed almost immediately in the build runs was the agent re-reading the same files constantly. It would read a file, do something, and three turns later read the exact same file again. The conversation history was capped at 10 entries, so anything older than that was gone from the model's context. The model was not being forgetful. I was starving it of its own history. I bumped it to 20. I considered caching reads in memory so the model would not have to re-request them, but that would bloat the context with old file contents and defeat the purpose. The right fix was just giving the model enough history to remember what it had already seen.
+
+### The first build prompt
 
 The first build prompt was 26 lines:
 
@@ -171,11 +191,9 @@ Next.js with shadcn components and PixiJS. For a single-file HTML simulator. Tha
 
 One decision that might sound insane but actually helped: I deliberately downgraded the library versions to match what GPT-5 had seen most during training. PixiJS went from 8.12 to 6.5.8. GSAP from 3.12.5 to 3.11.5. The model was hallucinating API calls that existed in newer versions it had not been trained on. With older versions it had deeper pattern memory and produced fewer bogus calls. I still had to add explicit warnings in the prompt like "Don't rely on legacy Pixi APIs (PIXI.utils.*, PIXI.BLEND_MODES.*, or app.view) when targeting Pixi v8" because it would confuse APIs across versions. But the hallucination rate dropped noticeably. You are not optimizing for the best library. You are optimizing for the library the model actually knows.
 
-But the real story is the workflow structure that emerged over the next couple weeks.
-
 ### Before phases: the free-for-all
 
-The first build prompt was basically "here is a design doc, build it, tell me when you are done." No structure. No ordering. The agent could do whatever it wanted in whatever order it wanted.
+The plan/build split solved the exploration-vs-construction problem. But build mode itself had no internal structure. The prompt was basically "here is a design doc, build it, tell me when you are done." No ordering. The agent could do whatever it wanted in whatever order it wanted.
 
 What it wanted to do was write animation code first. Every single time. It would skip the data model, skip the engine, skip the controls, and go straight to making things move on screen. The result looked like a demo for about 10 seconds. Then you would click play/pause and nothing would happen because there was no engine. You would look at the HUD and it would show hardcoded values because nothing was wired to a model. The animation was a screensaver, not a simulator.
 
@@ -183,9 +201,9 @@ When I told the agent to fix the controls, it would patch them in as an aftertho
 
 The core issue was that the agent was treating the task as one big blob. It had no sense of what needed to exist before what. It did not understand that a simulator needs a model before it needs a view, and a view before it needs choreography. This is obvious to any developer but the model does not have that instinct. It optimizes for whatever looks like progress, and animated pixels on screen look like progress even when they are sitting on nothing.
 
-### The phase system
+### Phases inside build
 
-The fix was to decompose the task into phases with explicit dependencies. The build prompt grew from 26 lines to over 400, and the core of it was a four-phase workflow:
+The build prompt existed for exactly one day before I realized it needed structure. I watched the agent produce screensaver after screensaver and the pattern was obvious: it had no concept of dependency ordering. The fix was to decompose the build task into phases with explicit dependencies. The build prompt grew from 26 lines to over 400, and the core of it was a four-phase workflow:
 
 **Phase 1, Engine + Model.** Build a `SimulationEngine` with `update(delta)` and `render()`. Build a neutral model with entities and at least one state machine. Set up DOM scaffolding only: `#world`, `#hud`, `#timeline`, `#controls`. The prompt explicitly said: finish this in under 3 steps. Do not use `play_and_screenshot` in this phase.
 
@@ -211,6 +229,8 @@ Not a prompt suggestion. A mechanical block. The agent could not assess visuals 
 The plan tool itself became the enforcement mechanism. Each item in the checklist had to be tagged with its phase number like `[Phase 1] Engine + Model`. The driver could parse these tags and verify ordering. At most one item could be `in_progress` at a time. The agent could not mark Phase 3 items as in_progress while Phase 1 items were still pending. And the driver would reject any attempt to emit "AGENT COMPLETED EXECUTION" while the plan had incomplete items.
 
 This is essentially a state machine imposed on the agent from the outside. The agent does not decide when it is done. The harness does, based on the agent's own plan. It is a pattern I would later see described in Anthropic's [building effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) post: break a complex task into subtasks with explicit gates, control tool access per phase, and use structured state to prevent the agent from skipping ahead or bailing early. I arrived at essentially the same architecture by watching the agent fail repeatedly and plugging the holes one at a time.
+
+So the full structure by the end of the first month was three layers of control. The outer layer was plan vs build: separate runs with a design document as the handoff. The middle layer was phases inside build: four ordered stages with step budgets. The inner layer was mechanical enforcement: hard gates in the driver that prevented the agent from skipping ahead, burning steps on premature screenshots, or declaring victory with unfinished work.
 
 ---
 
@@ -327,6 +347,43 @@ def detect_loop(history: list[dict], pattern_length: int = 3) -> bool:
 The normalization stripped call IDs, extracted tool names and salient arguments and reduced each action to a stable signature. A `read_file` call became `read_file|path|view_range`. A `shell` call kept the command text. `apply_patch` collapsed to just `apply_patch`. This meant the detector caught semantic loops like reading the same file three times or patching and re-patching the same section, not just identical API calls.
 
 There were also nudges. When the agent had not attempted a patch in a while the runtime would inject a message into the context: try writing something. And a deadline nudge when past 80% of the step budget. These are not elegant. They work the same way pressure works on people: stop overthinking, start shipping.
+
+---
+
+## Tool feedback: errors that teach instead of just failing
+
+This one took me longer to appreciate than it should have. Early on, when a tool failed, the error that went back to the model was whatever Python threw. A raw traceback, a generic `ValueError`, sometimes just `"error": "Unknown error"`. The model would see that, have no idea what went wrong, and either retry the exact same thing or give up and try something completely different. Both responses wasted steps.
+
+The turning point was `apply_patch`. The patch parser would reject a malformed patch with something like `"Invalid line in update section at line 47"`. That is technically correct and completely useless to the model. It does not know what was expected at line 47. It does not know if it used the wrong marker, the wrong prefix, or referenced a context line that does not exist. So it would guess, produce another broken patch, get another cryptic error, and burn through five turns accomplishing nothing.
+
+I rewrote every error path in the patch parser to include three things: what went wrong, why it went wrong, and what to do instead. Every single `DiffError` became a mini instruction:
+
+```python
+raise DiffError(
+    f"Update File Error - missing file: {path}. "
+    "The file you're trying to update doesn't exist. "
+    "Either create the file first, or use "
+    f"'*** Add File: {path}' instead of '*** Update File: {path}'."
+)
+```
+
+```python
+raise DiffError(
+    f"Invalid line in update section at line {self.index+1} "
+    f"('{self._cur_line()}').\n"
+    "Expected a context marker ($$ or @@ ...) or start of "
+    "section, but got an unexpected line.\n"
+    "Each section should start with '$$ <context_line>' or "
+    "'@@ <context_line>' where <context_line> is a line from "
+    "the original file."
+)
+```
+
+Same thing for `read_file`. If the model asked for a file that did not exist, the error did not just say "file not found." It said what file was missing and suggested running `rg` to find the right path. If the model asked to read a file it had already read and the file had not changed, the result said so explicitly: "this file was already read and has not changed, reuse the cached content instead." That alone cut redundant reads dramatically.
+
+For `shell`, I capped output at 80 lines but made sure the truncation message told the model how many lines were cut: "N more lines truncated." Before that fix, the model would see truncated output, assume it had the full picture, and make decisions based on incomplete information. With the count, it at least knew something was missing and could decide whether to dig deeper.
+
+The pattern is simple but it matters more than almost anything else I did to the harness. When a tool fails, the error message is your one chance to course-correct the model before it wastes another turn. A clean error that says "you used Add File but this file already exists, use Update File instead" gets the model back on track in one turn. A raw traceback gets you three more failed attempts before the model stumbles into the right approach by accident. Multiply that by 30-50 turns per run and bad error messages are one of the most expensive things in the whole system.
 
 ---
 
