@@ -171,24 +171,46 @@ Next.js with shadcn components and PixiJS. For a single-file HTML simulator. Tha
 
 One decision that might sound insane but actually helped: I deliberately downgraded the library versions to match what GPT-5 had seen most during training. PixiJS went from 8.12 to 6.5.8. GSAP from 3.12.5 to 3.11.5. The model was hallucinating API calls that existed in newer versions it had not been trained on. With older versions it had deeper pattern memory and produced fewer bogus calls. I still had to add explicit warnings in the prompt like "Don't rely on legacy Pixi APIs (PIXI.utils.*, PIXI.BLEND_MODES.*, or app.view) when targeting Pixi v8" because it would confuse APIs across versions. But the hallucination rate dropped noticeably. You are not optimizing for the best library. You are optimizing for the library the model actually knows.
 
-But the real story is the workflow structure that emerged over the next couple weeks. The build prompt grew from 26 lines to over 400. It specified a four-phase workflow:
+But the real story is the workflow structure that emerged over the next couple weeks.
 
-**Phase 1, Engine + Model.** Build a `SimulationEngine` with `update(delta)` and `render()`. Build a neutral model with entities and at least one state machine. Set up DOM scaffolding only: `#world`, `#hud`, `#timeline`, `#controls`.
+### Before phases: the free-for-all
 
-**Phase 2, Multi-View Scaffolding.** Wire the world view to the model. PixiJS renders, model drives. HUD reads model fields. Timeline appends entries on state changes. No choreography yet.
+The first build prompt was basically "here is a design doc, build it, tell me when you are done." No structure. No ordering. The agent could do whatever it wanted in whatever order it wanted.
 
-**Phase 3, Storyboard + Controls.** Implement animation sequences from the design doc with `gsap.timeline()`. Wire play/pause, speed and reset controls.
+What it wanted to do was write animation code first. Every single time. It would skip the data model, skip the engine, skip the controls, and go straight to making things move on screen. The result looked like a demo for about 10 seconds. Then you would click play/pause and nothing would happen because there was no engine. You would look at the HUD and it would show hardcoded values because nothing was wired to a model. The animation was a screensaver, not a simulator.
+
+When I told the agent to fix the controls, it would patch them in as an afterthought. But by then the animation code had assumptions baked in about how state worked, and the control wiring would contradict those assumptions. The agent would fix one contradiction and introduce two more. The whole thing would spiral into a mess where every fix created new problems because the foundation was never there.
+
+The core issue was that the agent was treating the task as one big blob. It had no sense of what needed to exist before what. It did not understand that a simulator needs a model before it needs a view, and a view before it needs choreography. This is obvious to any developer but the model does not have that instinct. It optimizes for whatever looks like progress, and animated pixels on screen look like progress even when they are sitting on nothing.
+
+### The phase system
+
+The fix was to decompose the task into phases with explicit dependencies. The build prompt grew from 26 lines to over 400, and the core of it was a four-phase workflow:
+
+**Phase 1, Engine + Model.** Build a `SimulationEngine` with `update(delta)` and `render()`. Build a neutral model with entities and at least one state machine. Set up DOM scaffolding only: `#world`, `#hud`, `#timeline`, `#controls`. The prompt explicitly said: finish this in under 3 steps. Do not use `play_and_screenshot` in this phase.
+
+**Phase 2, Multi-View Scaffolding.** Wire the world view to the model. PixiJS renders, model drives. HUD reads model fields. Timeline appends entries on state changes. No choreography yet. Finish in under 10 steps. Still no `play_and_screenshot`.
+
+**Phase 3, Storyboard + Controls.** This is where animation actually happens. Implement sequences from the design doc with `gsap.timeline()`. Wire play/pause, speed and reset controls. The prompt said: spend most of your steps here.
 
 **Phase 4, Instrumentation.** Expose `window.SIM_PROBE` with metrics, deterministic stepping and FPS tracking.
 
-Each phase had explicit deliverables and the prompt told the agent not to jump ahead. Telling it was not enough. The agent kept calling `play_and_screenshot` to admire its half-finished work before the engine logic was even wired. So I added a hard gate in the driver. A function called `_phases_1_to_3_completed()` would parse the plan checklist, look for items tagged with `[Phase 1]` through `[Phase 3]`, and check if they were all marked completed. If the agent tried to call any visual assessment tool before that, the driver returned a fake error:
+Each phase had explicit step budgets. The prompt told the agent exactly how many steps to allocate to each phase, which forced it to blow through the boring infrastructure fast and save its budget for the part that actually needed iteration. Without step budgets the agent would spend 15 turns on Phase 1 doing unnecessary exploration and run out of steps before reaching Phase 3.
+
+### Enforcing it mechanically
+
+Telling the agent about phases in the prompt was not enough. The agent kept calling `play_and_screenshot` to admire its half-finished work before the engine logic was even wired. So I added a hard gate in the driver. A function called `_phases_1_to_3_completed()` would parse the plan checklist, look for items tagged with `[Phase 1]` through `[Phase 3]`, and check if they were all marked completed. If the agent tried to call any visual assessment tool before that, the driver returned a fake error:
 
 ```
 "You are not allowed to call these tools until all items
  till Phase 3 are completed."
 ```
 
-Not a prompt suggestion. A mechanical block. The agent could not assess visuals until it had finished building. This is the kind of thing that sounds heavy-handed but was completely necessary. Without it the agent would write two lines of HTML, screenshot it, decide it was bad, rewrite everything, screenshot again, and burn through its entire step budget without building anything real.
+Not a prompt suggestion. A mechanical block. The agent could not assess visuals until it had finished building. Without it the agent would write two lines of HTML, screenshot it, decide it was bad, rewrite everything, screenshot again, and burn through its entire step budget without building anything real.
+
+The plan tool itself became the enforcement mechanism. Each item in the checklist had to be tagged with its phase number like `[Phase 1] Engine + Model`. The driver could parse these tags and verify ordering. At most one item could be `in_progress` at a time. The agent could not mark Phase 3 items as in_progress while Phase 1 items were still pending. And the driver would reject any attempt to emit "AGENT COMPLETED EXECUTION" while the plan had incomplete items.
+
+This is essentially a state machine imposed on the agent from the outside. The agent does not decide when it is done. The harness does, based on the agent's own plan. It is a pattern I would later see described in Anthropic's [building effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) post: break a complex task into subtasks with explicit gates, control tool access per phase, and use structured state to prevent the agent from skipping ahead or bailing early. I arrived at essentially the same architecture by watching the agent fail repeatedly and plugging the holes one at a time.
 
 ---
 
