@@ -12,7 +12,7 @@ tags:
 featured: false
 ---
 
-I was building a custom map-reduce pipeline where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them, and the whole thing sounded clean until the outputs needed to be sorted. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. None of that is a lie. But there is a gap between what the spec promises and what you actually encounter when you sit down with the [Java APIs](https://arrow.apache.org/docs/java/) and try to build a real reader and writer and make both of them correct *and* fast.
+I was building a custom map-reduce pipeline where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them and the whole thing sounded clean until the outputs needed to be sorted. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. None of that is a lie. But there is a gap between what the spec promises and what you actually encounter when you sit down with the [Java APIs](https://arrow.apache.org/docs/java/) and try to build a real reader and writer and make both of them correct *and* fast.
 
 That gap is filled with very specific traps, the kind that cost days and only surface after you think you're done.
 
@@ -20,7 +20,7 @@ That gap is filled with very specific traps, the kind that cost days and only su
 
 ## The setup
 
-The outputs could be sorted. Mappers didn't just dump rows, they produced data in a specific order, and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory.
+The outputs could be sorted. Mappers didn't just dump rows, they produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory.
 
 That sorted merge requirement is what turned a "just serialize some columns" job into a full negotiation with Arrow's internals. The traps I hit are not specific to my setup. They show up wherever Arrow starts doing real work.
 
@@ -94,7 +94,7 @@ Arrow's model is genuinely columnar. A batch of data is a `VectorSchemaRoot`, a 
 
 The first design decision that reflected this properly was splitting sort columns and non-sort columns into separate `VectorSchemaRoot`s. The immediate benefit was cleaner sorting since narrower schemas are easier to reason about and less likely to corrupt unrelated fields when you permute rows to reorder them.
 
-But the bigger reason was the read path. In the sorted merge the reader needs to reconstruct ordering state across multiple files, and it doesn't need all the columns to do that, only the sort columns. By keeping sort columns in their own root the reader could load *just* the sort columns into memory, reconstruct the heap state and merge order first, then defer loading the much wider non-sort columns until it actually needed to emit rows. When you have three sort columns and forty data columns that is a massive difference in memory footprint during the merge.
+But the bigger reason was the read path. In the sorted merge the reader needs to reconstruct ordering state across multiple files and it doesn't need all the columns to do that, only the sort columns. By keeping sort columns in their own root the reader could load *just* the sort columns into memory, reconstruct the heap state and merge order first, then defer loading the much wider non-sort columns until it actually needed to emit rows. When you have three sort columns and forty data columns that is a massive difference in memory footprint during the merge.
 
 Null handling required the same deliberateness. Row-oriented systems let you bluff through null semantics because they're often implicit, but Arrow forces you to be honest. If nullability isn't encoded at the schema and writer level, the read path has no reliable way to reconstruct row state. The implementation deliberately stores null fields as integer column positions, not field names:
 
@@ -175,7 +175,7 @@ None of these individually sounds like much. Together they're the difference bet
 
 ## The root allocator problem
 
-Arrow's Java library manages all its off-heap memory through a `RootAllocator`. You create one, give it a byte limit, and every `FieldVector`, every `VectorSchemaRoot`, every buffer allocation draws from that pool.
+Arrow's Java library manages all its off-heap memory through a `RootAllocator`. You create one, give it a byte limit and every `FieldVector`, every `VectorSchemaRoot`, every buffer allocation draws from that pool.
 
 The problem is that the limit you set at construction time is the limit you're stuck with. `RootAllocator` cannot be resized at runtime. You can't grow it when load increases and you can't shrink it when you're done with a heavy phase. You pick a number at init time and that number is your ceiling forever.
 
@@ -185,13 +185,13 @@ The answer wasn't one number. It was different numbers for the write path and th
 
 There was even a bug where an all-memory-released assertion was placed after creating a *new* allocator, which is the wrong time to ask that question. Allocator sanity checks have to be tied to the lifecycle that just ended, not the one you just started. And when the process couldn't determine the direct memory limit, the Arrow config fell back to a default off-heap budget of 2 GB. That sounds harmless, but it was feeding the knobs that controlled batching and sorted read window sizes. If the default was wrong for the environment then the entire bounded design could be mis-sized before the first batch even loaded.
 
-The rule that emerged was simple: be conservative on initial sizing, instrument early, and treat the allocator limit as a hard constraint that your batch sizes and window sizes need to respect rather than the other way around.
+The rule that emerged was simple: be conservative on initial sizing, instrument early and treat the allocator limit as a hard constraint that your batch sizes and window sizes need to respect rather than the other way around.
 
 ---
 
 ## Sorting
 
-Sorting Arrow-backed data is where this project became genuinely difficult. A sorted pipeline has to keep memory bounded *and* present rows in the right global order, and those two goals fight each other constantly.
+Sorting Arrow-backed data is where this project became genuinely difficult. A sorted pipeline has to keep memory bounded *and* present rows in the right global order and those two goals fight each other constantly.
 
 The writer side needed a sort strategy that didn't spend unnecessary time touching full rows. Compute order on the captured sort values, then apply the resulting indices across both vector roots. Two levels of parallelism made this tractable. First the sort indices themselves are computed with `Arrays.parallelSort(...)`, then the actual permutation is applied to both roots concurrently:
 
@@ -325,7 +325,7 @@ One allocation per loop instead of one per row. This kind of change doesn't show
 
 ## Memory pressure lives off heap
 
-The deeper I got into bounded memory reads, the more I had to reckon with where Arrow's memory actually lives. Most of it is off heap. Your heap metrics look calm while Arrow's buffer allocations are the real pressure, and standard GC intuition gets you about halfway.
+The deeper I got into bounded memory reads, the more I had to reckon with where Arrow's memory actually lives. Most of it is off heap. Your heap metrics look calm while Arrow's buffer allocations are the real pressure and standard GC intuition gets you about halfway.
 
 Variable-width columns like strings and byte arrays are the worst offenders. Buffers grow unpredictably and reloads cost more. The difference between tight windowing and sloppy windowing shows up most dramatically there. The hot stack traces kept pointing at `BaseVariableWidthVector.copyFromSafe(...)` while loading the next batch of sorted data. The expensive part wasn't just reading another window, it was materializing that window for variable-width data while earlier buffers were still alive.
 
@@ -341,11 +341,11 @@ The rule that emerged: **previous batch resources get explicitly released before
 
 I added [JMH](https://github.com/openjdk/jmh) benchmarks early and kept them with a baseline on the previous format so Arrow wasn't being evaluated against vibes. I paired that with [async-profiler](https://github.com/async-profiler/async-profiler) because benchmarks tell you *that* something is expensive while profiles tell you *where* the cost is actually hiding.
 
-The most important discipline was separating the no-sort path from the sort-heavy path in benchmarks. Sorting dominates everything else, and without that separation you can't tell if a regression belongs to Arrow serialization or the ordering layer on top of it.
+The most important discipline was separating the no-sort path from the sort-heavy path in benchmarks. Sorting dominates everything else and without that separation you can't tell if a regression belongs to Arrow serialization or the ordering layer on top of it.
 
 That combination gave me a much clearer workflow. JMH told me whether a change was real, async-profiler showed me which path was still wasting time. That is how things like repeated vector lookups and `Text.toString()` stopped being guesses and started becoming obvious targets.
 
-The other thing that helped a lot was going straight into Arrow's codebase. A few of the weirdest slowdowns came from operations that looked like simple bookkeeping from the outside. Reading the implementation was often the fastest way to understand what work was actually happening, and it also explained why it showed up in the profile.
+The other thing that helped a lot was going straight into Arrow's codebase. A few of the weirdest slowdowns came from operations that looked like simple bookkeeping from the outside. Reading the implementation was often the fastest way to understand what work was actually happening and it also explained why it showed up in the profile.
 
 ---
 
@@ -387,6 +387,6 @@ Fewer structures, less recomputation, easier reasoning, better threshold behavio
 
 ## My take
 
-Every problem in this work had the same shape. Arrow is explicit about everything: what's materialized, what's buffered, what's cached, what becomes invalid when a batch boundary moves, what a size number actually means, where memory lives. The Java APIs don't hide complexity from you the way the Python APIs sometimes do, and that's not a criticism of Arrow. The spec delivers on its promises. It's just that the Java implementation expects you to understand every detail of the contract and it will not warn you when you violate one.
+Every problem in this work had the same shape. Arrow is explicit about everything: what's materialized, what's buffered, what's cached, what becomes invalid when a batch boundary moves, what a size number actually means, where memory lives. The Java APIs don't hide complexity from you the way the Python APIs sometimes do and that's not a criticism of Arrow. The spec delivers on its promises. It's just that the Java implementation expects you to understand every detail of the contract and it will not warn you when you violate one.
 
 If you're using Arrow in Java for anything past toy examples, expect to spend time in Arrow's source code. The Javadoc tells you what methods exist. The source tells you what they actually cost.
