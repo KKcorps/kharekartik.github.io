@@ -62,6 +62,8 @@ Yes, "creater" is a typo. It shipped. The design doc guidelines asked the model 
 
 The philosophy at this point was deliberate: start with the dumbest possible thing and see where it breaks. I did not want to design an elaborate prompt upfront because I had no idea what failure modes I would actually hit. Every guardrail, every constraint, every line added to the prompt later was a response to something that went wrong in a real run. Not speculation. Not best practices. Just pain.
 
+The workflow for the first few weeks was basically this: run a session, watch the agent flail, then go through the logs manually after it finished. The driver had a logger from day one so I had full traces of every tool call, every model response, every patch attempt. I would read through a failed run, form a theory about what went wrong, then paste the relevant chunks of the log into Cursor along with my notes and let it help me figure out the fix. It was AI debugging AI, mediated by me staring at logs. Not glamorous but it was the fastest feedback loop I had.
+
 ---
 
 ## The five days that felt like five weeks
