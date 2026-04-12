@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loop Detection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.danger { border-color: #e64a4a; }
+  button.danger:hover { color: #e64a4a; }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .bad { color: #e64a4a; }
+  .stats .warn { color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// loop detection</div>
+  <div class="widget-subtitle">step through agent actions — watch normalized signatures reveal a repeating cycle</div>
+
+  <svg id="main-svg" viewBox="0 0 720 420" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="365" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="392" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">press next step to watch the agent work</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-step">next step →</button>
+    <button id="btn-play">▶ play</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>actions: <span id="stat-actions">0</span></div>
+    <div>pattern length: <span id="stat-pattern">3</span></div>
+    <div>loop detected: <span id="stat-loop">no</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. State
+const PATTERN_LEN = 3;
+
+// Agent action history — starts productive, then enters a loop
+const actionHistory = [
+  { tool: 'read_file',    args: 'src/engine.py:1-50',     sig: 'read_file|engine.py|1:50' },
+  { tool: 'shell',        args: 'rg -n "class Engine"',   sig: 'shell|rg class Engine' },
+  { tool: 'apply_patch',  args: 'Update engine.py +tick', sig: 'apply_patch' },
+  { tool: 'read_file',    args: 'src/render.py:1-80',     sig: 'read_file|render.py|1:80' },
+  { tool: 'apply_patch',  args: 'Update render.py +draw', sig: 'apply_patch' },
+  { tool: 'shell',        args: 'python test_engine.py',  sig: 'shell|python test' },
+  // Loop starts here — agent reads same file, patches, reads again
+  { tool: 'read_file',    args: 'src/engine.py:40-60',    sig: 'read_file|engine.py|40:60' },
+  { tool: 'apply_patch',  args: 'Update engine.py +fix',  sig: 'apply_patch' },
+  { tool: 'read_file',    args: 'src/engine.py:40-60',    sig: 'read_file|engine.py|40:60' },
+  // Second cycle (matches first)
+  { tool: 'read_file',    args: 'src/engine.py:40-60',    sig: 'read_file|engine.py|40:60' },
+  { tool: 'apply_patch',  args: 'Update engine.py +fix2', sig: 'apply_patch' },
+  { tool: 'read_file',    args: 'src/engine.py:40-60',    sig: 'read_file|engine.py|40:60' },
+];
+
+let stepIdx = -1;
+let loopDetected = false;
+let playing = false;
+let interval;
+
+// 2. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+
+// Loop detection logic (mirrors the blog's code)
+function detectLoop(history, patternLength) {
+  if (history.length < patternLength * 2) return false;
+  const recent = history.slice(-patternLength).map(h => h.sig);
+  const prev = history.slice(-patternLength * 2, -patternLength).map(h => h.sig);
+  return JSON.stringify(recent) === JSON.stringify(prev);
+}
+
+// Tool colors
+function toolColor(tool) {
+  if (tool === 'read_file') return '#4a9ee6';
+  if (tool === 'apply_patch') return '#e6a64a';
+  if (tool === 'shell') return '#888';
+  return '#666';
+}
+
+function toolBgColor(tool) {
+  if (tool === 'read_file') return '#0a0f1a';
+  if (tool === 'apply_patch') return '#1a150a';
+  if (tool === 'shell') return '#111';
+  return '#111';
+}
+
+// 3. Render
+function render() {
+  content.innerHTML = '';
+
+  const visible = actionHistory.slice(0, stepIdx + 1);
+
+  // ── RAW ACTIONS ──
+  const rawLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  rawLabel.setAttribute('x', 40);
+  rawLabel.setAttribute('y', 16);
+  rawLabel.setAttribute('font-size', '10');
+  rawLabel.setAttribute('font-family', 'IBM Plex Mono');
+  rawLabel.setAttribute('fill', '#666');
+  rawLabel.textContent = 'RAW ACTIONS';
+  content.appendChild(rawLabel);
+
+  const rowH = 24;
+  const startY = 30;
+  const maxVisibleRows = 8;
+  const visibleStart = Math.max(0, visible.length - maxVisibleRows);
+
+  for (let i = visibleStart; i < visible.length; i++) {
+    const vi = i - visibleStart;
+    const action = visible[i];
+    const y = startY + vi * rowH;
+    const isCurrent = i === stepIdx;
+
+    // Determine if this action is part of the detected loop pattern
+    const isInRecentPattern = loopDetected && i >= visible.length - PATTERN_LEN;
+    const isInPrevPattern = loopDetected && i >= visible.length - PATTERN_LEN * 2 && i < visible.length - PATTERN_LEN;
+
+    // Row background
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', 40);
+    bg.setAttribute('y', y);
+    bg.setAttribute('width', 640);
+    bg.setAttribute('height', rowH - 2);
+    bg.setAttribute('rx', 2);
+
+    if (isInRecentPattern || isInPrevPattern) {
+      bg.setAttribute('fill', '#1a0a0a');
+      bg.setAttribute('stroke', '#e64a4a');
+      bg.setAttribute('stroke-width', '1');
+      bg.setAttribute('stroke-dasharray', isInPrevPattern ? '4,3' : 'none');
+    } else if (isCurrent) {
+      bg.setAttribute('fill', ACCENT_FILL);
+      bg.setAttribute('stroke', ACCENT);
+      bg.setAttribute('stroke-width', '1');
+    } else {
+      bg.setAttribute('fill', 'none');
+      bg.setAttribute('stroke', '#181818');
+      bg.setAttribute('stroke-width', '1');
+    }
+    content.appendChild(bg);
+
+    // Turn number
+    const num = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    num.setAttribute('x', 52);
+    num.setAttribute('y', y + 15);
+    num.setAttribute('font-size', '9');
+    num.setAttribute('font-family', 'IBM Plex Mono');
+    num.setAttribute('fill', '#333');
+    num.textContent = `${i + 1}`;
+    content.appendChild(num);
+
+    // Tool badge
+    const badge = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    badge.setAttribute('x', 72);
+    badge.setAttribute('y', y + 3);
+    badge.setAttribute('width', 90);
+    badge.setAttribute('height', 16);
+    badge.setAttribute('rx', 2);
+    badge.setAttribute('fill', toolBgColor(action.tool));
+    badge.setAttribute('stroke', toolColor(action.tool));
+    badge.setAttribute('stroke-width', '0.5');
+    content.appendChild(badge);
+
+    const toolTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    toolTxt.setAttribute('x', 117);
+    toolTxt.setAttribute('y', y + 15);
+    toolTxt.setAttribute('text-anchor', 'middle');
+    toolTxt.setAttribute('font-size', '8');
+    toolTxt.setAttribute('font-family', 'IBM Plex Mono');
+    toolTxt.setAttribute('fill', toolColor(action.tool));
+    toolTxt.textContent = action.tool;
+    content.appendChild(toolTxt);
+
+    // Args
+    const argsTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    argsTxt.setAttribute('x', 172);
+    argsTxt.setAttribute('y', y + 15);
+    argsTxt.setAttribute('font-size', '9');
+    argsTxt.setAttribute('font-family', 'IBM Plex Mono');
+    argsTxt.setAttribute('fill', isCurrent ? '#888' : '#555');
+    const maxArgChars = 38;
+    argsTxt.textContent = action.args.length > maxArgChars ? action.args.slice(0, maxArgChars) + '...' : action.args;
+    content.appendChild(argsTxt);
+
+    // Pattern label
+    if (isInRecentPattern) {
+      const pl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      pl.setAttribute('x', 670);
+      pl.setAttribute('y', y + 15);
+      pl.setAttribute('text-anchor', 'end');
+      pl.setAttribute('font-size', '8');
+      pl.setAttribute('font-family', 'IBM Plex Mono');
+      pl.setAttribute('fill', '#e64a4a');
+      pl.textContent = 'RECENT';
+      content.appendChild(pl);
+    } else if (isInPrevPattern) {
+      const pl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      pl.setAttribute('x', 670);
+      pl.setAttribute('y', y + 15);
+      pl.setAttribute('text-anchor', 'end');
+      pl.setAttribute('font-size', '8');
+      pl.setAttribute('font-family', 'IBM Plex Mono');
+      pl.setAttribute('fill', '#e64a4a');
+      pl.textContent = 'PREV';
+      content.appendChild(pl);
+    }
+  }
+
+  // ── NORMALIZED SIGNATURES ──
+  const sigY = 232;
+  const sigLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  sigLabel.setAttribute('x', 40);
+  sigLabel.setAttribute('y', sigY);
+  sigLabel.setAttribute('font-size', '10');
+  sigLabel.setAttribute('font-family', 'IBM Plex Mono');
+  sigLabel.setAttribute('fill', '#666');
+  sigLabel.textContent = 'NORMALIZED SIGNATURES (PATTERN WINDOW)';
+  content.appendChild(sigLabel);
+
+  // Show the last N*2 signatures in two rows: "prev" and "recent"
+  if (visible.length >= PATTERN_LEN) {
+    const prevSigs = visible.length >= PATTERN_LEN * 2
+      ? visible.slice(-PATTERN_LEN * 2, -PATTERN_LEN).map(a => a.sig)
+      : [];
+    const recentSigs = visible.slice(-PATTERN_LEN).map(a => a.sig);
+
+    // Prev row
+    const prevLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    prevLabel.setAttribute('x', 40);
+    prevLabel.setAttribute('y', sigY + 20);
+    prevLabel.setAttribute('font-size', '9');
+    prevLabel.setAttribute('font-family', 'IBM Plex Mono');
+    prevLabel.setAttribute('fill', '#444');
+    prevLabel.textContent = 'prev:';
+    content.appendChild(prevLabel);
+
+    const sigBoxW = 190;
+    const sigBoxH = 20;
+    const sigStartX = 100;
+
+    prevSigs.forEach((sig, si) => {
+      const sx = sigStartX + si * (sigBoxW + 6);
+      const sy = sigY + 8;
+
+      const sRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      sRect.setAttribute('x', sx);
+      sRect.setAttribute('y', sy);
+      sRect.setAttribute('width', sigBoxW);
+      sRect.setAttribute('height', sigBoxH);
+      sRect.setAttribute('rx', 2);
+      sRect.setAttribute('fill', loopDetected ? '#1a0a0a' : 'none');
+      sRect.setAttribute('stroke', loopDetected ? '#e64a4a' : '#222');
+      sRect.setAttribute('stroke-width', '1');
+      sRect.setAttribute('stroke-dasharray', loopDetected ? '4,3' : 'none');
+      content.appendChild(sRect);
+
+      const sTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sTxt.setAttribute('x', sx + 6);
+      sTxt.setAttribute('y', sy + 14);
+      sTxt.setAttribute('font-size', '8');
+      sTxt.setAttribute('font-family', 'IBM Plex Mono');
+      sTxt.setAttribute('fill', loopDetected ? '#e64a4a' : '#555');
+      sTxt.textContent = sig.length > 26 ? sig.slice(0, 26) + '..' : sig;
+      content.appendChild(sTxt);
+    });
+
+    if (prevSigs.length === 0) {
+      const noData = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      noData.setAttribute('x', sigStartX);
+      noData.setAttribute('y', sigY + 20);
+      noData.setAttribute('font-size', '9');
+      noData.setAttribute('font-family', 'IBM Plex Mono');
+      noData.setAttribute('fill', '#333');
+      noData.textContent = 'not enough history yet';
+      content.appendChild(noData);
+    }
+
+    // Recent row
+    const recentLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    recentLabel.setAttribute('x', 40);
+    recentLabel.setAttribute('y', sigY + 50);
+    recentLabel.setAttribute('font-size', '9');
+    recentLabel.setAttribute('font-family', 'IBM Plex Mono');
+    recentLabel.setAttribute('fill', '#444');
+    recentLabel.textContent = 'recent:';
+    content.appendChild(recentLabel);
+
+    recentSigs.forEach((sig, si) => {
+      const sx = sigStartX + si * (sigBoxW + 6);
+      const sy = sigY + 38;
+
+      const sRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      sRect.setAttribute('x', sx);
+      sRect.setAttribute('y', sy);
+      sRect.setAttribute('width', sigBoxW);
+      sRect.setAttribute('height', sigBoxH);
+      sRect.setAttribute('rx', 2);
+      sRect.setAttribute('fill', loopDetected ? '#1a0a0a' : ACCENT_FILL_DARK);
+      sRect.setAttribute('stroke', loopDetected ? '#e64a4a' : ACCENT_DIM);
+      sRect.setAttribute('stroke-width', '1');
+      content.appendChild(sRect);
+
+      const sTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sTxt.setAttribute('x', sx + 6);
+      sTxt.setAttribute('y', sy + 14);
+      sTxt.setAttribute('font-size', '8');
+      sTxt.setAttribute('font-family', 'IBM Plex Mono');
+      sTxt.setAttribute('fill', loopDetected ? '#e64a4a' : ACCENT_MID);
+      sTxt.textContent = sig.length > 26 ? sig.slice(0, 26) + '..' : sig;
+      content.appendChild(sTxt);
+    });
+
+    // Match indicator
+    if (prevSigs.length === PATTERN_LEN) {
+      const match = JSON.stringify(recentSigs) === JSON.stringify(prevSigs);
+      const matchY = sigY + 68;
+      const matchTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      matchTxt.setAttribute('x', 360);
+      matchTxt.setAttribute('y', matchY);
+      matchTxt.setAttribute('text-anchor', 'middle');
+      matchTxt.setAttribute('font-size', '10');
+      matchTxt.setAttribute('font-family', 'IBM Plex Mono');
+
+      if (match) {
+        matchTxt.setAttribute('fill', '#e64a4a');
+        matchTxt.textContent = '▲ SIGNATURES MATCH — LOOP DETECTED — TERMINATING RUN';
+      } else {
+        matchTxt.setAttribute('fill', '#333');
+        matchTxt.textContent = 'signatures do not match — no loop';
+      }
+      content.appendChild(matchTxt);
+    }
+  }
+
+  // Status text
+  if (loopDetected) {
+    statusText.textContent = 'loop detected: read → patch → read × 2 — driver terminates the run';
+    statusText.setAttribute('fill', '#e64a4a');
+  } else if (stepIdx >= 0) {
+    const a = visible[stepIdx];
+    statusText.textContent = `${a.tool}(${a.args})`;
+    statusText.setAttribute('fill', '#888');
+  } else {
+    statusText.textContent = 'press next step to watch the agent work';
+    statusText.setAttribute('fill', '#888');
+  }
+
+  // Stats
+  document.getElementById('stat-actions').textContent = visible.length;
+  const loopEl = document.getElementById('stat-loop');
+  if (loopDetected) {
+    loopEl.textContent = 'yes — terminated';
+    loopEl.className = 'bad';
+  } else if (visible.length >= PATTERN_LEN * 2) {
+    loopEl.textContent = 'checking...';
+    loopEl.className = 'warn';
+  } else {
+    loopEl.textContent = 'no';
+    loopEl.className = '';
+  }
+}
+
+// 4. Event handlers
+function advanceStep() {
+  if (loopDetected) return;
+  if (stepIdx >= actionHistory.length - 1) return;
+  stepIdx++;
+
+  const visible = actionHistory.slice(0, stepIdx + 1);
+  if (detectLoop(visible, PATTERN_LEN)) {
+    loopDetected = true;
+    if (playing) {
+      playing = false;
+      clearInterval(interval);
+      document.getElementById('btn-play').textContent = '▶ play';
+      document.getElementById('btn-play').classList.remove('active');
+    }
+  }
+  render();
+}
+
+function resetState() {
+  stepIdx = -1;
+  loopDetected = false;
+  playing = false;
+  clearInterval(interval);
+  document.getElementById('btn-play').textContent = '▶ play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+}
+
+document.getElementById('btn-step').addEventListener('click', advanceStep);
+
+document.getElementById('btn-play').addEventListener('click', function() {
+  if (loopDetected) return;
+  playing = !playing;
+  this.textContent = playing ? '⏸ pause' : '▶ play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (loopDetected || stepIdx >= actionHistory.length - 1) {
+        playing = false;
+        clearInterval(interval);
+        document.getElementById('btn-play').textContent = '▶ play';
+        document.getElementById('btn-play').classList.remove('active');
+        return;
+      }
+      advanceStep();
+    }, 1200);
+  } else {
+    clearInterval(interval);
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', resetState);
+
+// 5. Init
+render();
+</script>
+</body>
+</html>
