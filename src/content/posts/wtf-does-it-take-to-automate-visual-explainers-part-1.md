@@ -60,6 +60,8 @@ of complex codebases with the help of simulators.
 
 Yes, "creater" is a typo. It shipped. The design doc guidelines asked the model to specify things like what controls the user should have, what state the simulator should maintain, whether there should be a clock. Reasonable questions. Completely insufficient for what I was actually trying to build. But you do not know that until you run it.
 
+The philosophy at this point was deliberate: start with the dumbest possible thing and see where it breaks. I did not want to design an elaborate prompt upfront because I had no idea what failure modes I would actually hit. Every guardrail, every constraint, every line added to the prompt later was a response to something that went wrong in a real run. Not speculation. Not best practices. Just pain.
+
 ---
 
 ## The five days that felt like five weeks
@@ -106,6 +108,8 @@ The model's responses were getting truncated by the max_tokens limit. It was gen
 
 Within the first week the agent had five tools: `shell`, `apply_patch`, `browse_and_screenshot`, `read_file` and `update_understanding`. The last one was a persistent in-memory scratchpad. The agent could write notes to itself that would survive across turns without stuffing the conversation history.
 
+I did not design these tool interfaces from scratch. There is a repo on GitHub, [x1xhlol/system-prompts-and-models-of-ai-tools](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools), that collects system prompts from various AI coding tools. I spent a while browsing through those to understand how tools like Codex and Claude Code structured their `read_file` and planning interfaces. The tool schemas, the parameter constraints, the way they scoped what the model could and could not do in each mode. My `read_file` and `update_plan` tools were directly modeled after the patterns I found there. No point reinventing something when someone has already leaked the good version.
+
 The `read_file` tool forced view ranges. You could not read an entire file. You had to specify a start and end line. If you did not know the range, the prompt told you to run `rg -n` first to find it, then read the smallest slice:
 
 ```markdown
@@ -119,7 +123,9 @@ The `read_file` tool forced view ranges. You could not read an entire file. You 
 
 The `apply_patch` tool was more consequential. It used a custom patch format. Not unified diff, not git diff. A bespoke format with `$$ context_line` markers, `+` for additions, `-` for deletions and space-prefixed context lines. The prompt included multiple correct and incorrect examples. Getting the model to produce valid patches was its own multi-day mess. The format went through several iterations before the model could reliably produce parseable patches.
 
-The patch format mattered more than I expected. When the model has unlimited freedom to edit files, its favorite recovery strategy is regeneration. Something broke? Here is a brand new version of the whole file. More things break? Another completely new version. You get motion without convergence. Structured patches forced a different question: what exactly needs to change? Once this clicked, patch accuracy jumped dramatically. That single change refined the patch format definition and rewrote the build prompt. 70 lines in the patch logic, 137 in the prompt. Getting the patch format right changed the economics of every fix from that point forward.
+The biggest headache was that OpenAI's models were absolutely burnt into using `@@` as the hunk marker, because that is what their own prompting guide uses. My format used `$$`. No matter how many examples I put in the prompt, the model would keep emitting `@@` markers and the parser would reject them. I eventually gave up fighting it and just made the parser accept both `$$` and `@@` as valid anchors. Sometimes the pragmatic fix is admitting the model is not going to change its habits and meeting it where it is.
+
+The patch format mattered more than I expected. When the model has unlimited freedom to edit files, its favorite recovery strategy is regeneration. Something broke? Here is a brand new version of the whole file. More things break? Another completely new version. You get motion without convergence. Structured patches forced a different question: what exactly needs to change? Once this clicked, patch accuracy jumped dramatically. That single change refined the patch format definition and rewrote the build prompt. Getting the patch format right changed the economics of every fix from that point forward.
 
 The tool registry also controlled access by task mode. Plan mode got exploration tools. Build mode got construction and validation tools:
 
@@ -218,7 +224,21 @@ This was the first time I understood something that would become the central the
 
 `play_and_screenshot` was the next evolution. Unlike `browse_and_screenshot` which took a single static screenshot, this tool clicked the play button on the simulator, then captured screenshots at fixed intervals as the animation ran. It returned a sequence of images that the agent could compare frame to frame.
 
-The same iteration introduced a judge rubric. The agent was told to score its own output across seven dimensions: clarity, smoothness, rhythm and cadence, consistency of style, feedback and responsiveness, balance and composition, delight factor. Each rated 1 to 5 with explicit anchors for what each score meant. The scoring rules were calibrated to be harsh:
+The same iteration introduced a judge rubric. The agent was told to score its own output across seven dimensions, each rated 1 to 5. Not vague labels. Explicit anchors with red flags and fix-first instructions for every level:
+
+| Dimension | 5 (Exceptional) | 3 (Mediocre) | 1 (Bad) |
+|---|---|---|---|
+| **Clarity** | Story obvious at a glance, single focal path | Understandable after a second, mild clutter | No idea what's happening |
+| **Smoothness** | Glide, natural ease in/out, nothing jolts | Serviceable, occasional stiffness | Stop-go, painful to watch |
+| **Rhythm** | Hypnotic beat, waves feel musical | Flat or slightly uneven | Random, exhausting |
+| **Consistency** | Cohesive timing/easing across all elements | Noticeable mix of floaty vs snappy | Patchwork of styles |
+| **Feedback** | State changes announce themselves with pulse/glow | Functional, some changes abrupt | Silent or confusing transitions |
+| **Balance** | Eye is guided, space used intentionally | Adequate, a bit cramped | Messy and incoherent |
+| **Delight** | Memorable, you want to rewatch | Plain, utilitarian | Ugly or annoying |
+
+Each level also included red flags ("background noise competes with flow", "sudden speed shifts", "everything moves same speed") and specific fix-first instructions ("reduce simultaneous motion, dim background, brighten flow"). The idea was that even a mediocre score should tell the agent exactly what to fix next.
+
+The scoring rules were calibrated to be harsh:
 
 - Default to 3 (Mediocre) unless there is strong evidence to go higher
 - 5 should be very rare, only if it would impress a professional
@@ -277,6 +297,22 @@ There were also nudges. When the agent had not attempted a patch in a while the 
 
 ---
 
+## Context management: the quiet money pit
+
+This is the boring part that nobody writes about but that eats your budget alive. Every turn, the full conversation history goes back to the API. Tool outputs, reasoning, patch text, screenshot base64 strings. It adds up fast on a mini model budget.
+
+The first thing I did was cap tool output to 80 lines. Truncate the rest, append a "N more lines truncated" message. For `shell` output this was fine. For `read_file` it was fine because I already forced view ranges. But for `apply_patch` it was a disaster. Successful patches were being included verbatim in the conversation history. The model would read back its own patches every turn, burning tokens on content it already knew. So I started stripping patch content from the history after successful application, replacing it with a short "apply_patch (patch omitted after successful application)" stub.
+
+The second problem was more subtle. I had an `update_understanding` tool that let the agent persist notes across turns. And a `update_plan` tool for the build checklist. Both got injected into the system prompt every turn. The question was: where in the prompt do you put them?
+
+This matters because of prefix caching. OpenAI caches the prefix of your prompt, so if the first N tokens are identical across turns, you get a cache hit and pay less. If your system prompt keeps changing at the top because the understanding or plan is shifting, you bust the cache every turn. I ended up structuring the prompt so the static instructions came first (the big 400-line build prompt, tool schemas, aesthetics guidelines) and the dynamic state (current understanding, current plan, step budget) came at the end. That way the expensive static prefix gets cached and only the tail changes between turns.
+
+I also bumped `MAX_CONVERSATION_HISTORY` from 10 to 20 to 50 over the course of the month, and eventually added support for OpenAI's `previous_response_id` field so I could send only the latest tool output instead of the entire conversation. The model still had access to the full history through the response chain, but I was not paying to resend it every turn.
+
+None of this is glamorous. But when you are running a mini model and each run is 30-50 turns, the difference between smart context management and naive context management is the difference between a $2 run and a $15 run.
+
+---
+
 ## What bad runs actually looked like
 
 The concrete patterns that kept forcing the architecture forward:
@@ -327,4 +363,6 @@ The first month taught me that the interesting engineering is not in the generat
 
 The system did not start with a visual. It started with a harness. And that harness took a solid month to build before it could produce anything worth looking at.
 
-In Part 2 I will cover what happened when the agent started actually generating simulators, and why PixiJS turned out to be the wrong rendering layer for what I was trying to build.
+The single `index.html` outputs from this era were promising at first glance. Some of them actually ran. Some of them even looked decent. But they were a nightmare to maintain. The agent would load PixiJS, GSAP, Tailwind, and AlpineJS all from CDN in one file, and half the time the CDN imports would fail or conflict. The files got huge, which meant the agent needed enormous context windows just to patch them. And because everything lived in one file, a fix to the animation code could break the control wiring three hundred lines away. These problems were already obvious by the end of the first month, but I did not have a good answer yet.
+
+In Part 2 I will cover what happened when the agent started actually generating simulators with this harness, and why the single-file PixiJS approach turned out to be the wrong architecture for what I was trying to build.
