@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase-Gated Build</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.danger { border-color: #e64a4a; }
+  button.danger:hover { color: #e64a4a; }
+  .mode-label { margin-left: auto; font-size: 11px; color: #666; }
+  .mode-label span { color: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .bad { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// phase-gated build</div>
+  <div class="widget-subtitle">toggle between ungated and gated mode — step through to see how the agent orders its work</div>
+
+  <svg id="main-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="345" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="372" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">choose a mode, then step through</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-ungated">ungated</button>
+    <button id="btn-gated">gated</button>
+    <button id="btn-step">next step →</button>
+    <button id="btn-reset">reset</button>
+    <div class="mode-label">mode: <span id="mode-display">none</span></div>
+  </div>
+  <div class="stats">
+    <div>step: <span id="stat-step">0</span> / <span id="stat-total">0</span></div>
+    <div>outcome: <span id="stat-outcome">—</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. State
+// Phase tasks
+const phases = [
+  { phase: 1, label: 'ENGINE + MODEL', tasks: ['SimulationEngine', 'state machine', 'DOM scaffold'] },
+  { phase: 2, label: 'MULTI-VIEW', tasks: ['world view ↔ model', 'HUD reads model', 'timeline entries'] },
+  { phase: 3, label: 'STORYBOARD', tasks: ['gsap.timeline()', 'play/pause ctrl', 'speed + reset'] },
+  { phase: 4, label: 'INSTRUMENT', tasks: ['SIM_PROBE', 'FPS tracking', 'deterministic step'] },
+];
+
+// Ungated: agent does tasks in chaotic order (animation first, model last)
+const ungatedOrder = [
+  { phase: 2, task: 0, msg: 'starts wiring world view first — no model exists yet' },
+  { phase: 3, task: 0, msg: 'jumps to animation — writes gsap timelines over nothing' },
+  { phase: 3, task: 1, msg: 'adds play/pause — clicks do nothing, no engine' },
+  { phase: 1, task: 0, msg: 'finally builds engine — contradicts animation assumptions' },
+  { phase: 3, task: 0, msg: 'animation broke — rewrites gsap code from scratch' },
+  { phase: 1, task: 1, msg: 'adds state machine — conflicts with existing wiring' },
+  { phase: 2, task: 1, msg: 'HUD shows hardcoded values — not wired to model' },
+  { phase: 3, task: 2, msg: 'speed slider does nothing — engine not connected' },
+  { phase: 1, task: 2, msg: 'DOM scaffold overwrites existing layout — things break' },
+  { phase: 2, task: 0, msg: 'world view rewritten again — third attempt' },
+  { phase: 2, task: 2, msg: 'timeline entries fire out of order' },
+  { phase: 3, task: 0, msg: 'gsap rewrite #3 — still janky' },
+];
+
+// Gated: agent follows phase order, gates prevent skipping
+const gatedOrder = [
+  { phase: 1, task: 0, msg: 'phase 1 — builds SimulationEngine with update() and render()' },
+  { phase: 1, task: 1, msg: 'phase 1 — state machine with entity lifecycle' },
+  { phase: 1, task: 2, msg: 'phase 1 — DOM scaffold: #world, #hud, #timeline, #controls' },
+  { phase: 2, task: 0, msg: 'phase 2 — world view reads from model, PixiJS renders' },
+  { phase: 2, task: 1, msg: 'phase 2 — HUD bound to model fields' },
+  { phase: 2, task: 2, msg: 'phase 2 — timeline appends on state changes' },
+  { phase: 3, task: 0, msg: 'phase 3 — gsap.timeline() sequences from design doc' },
+  { phase: 3, task: 1, msg: 'phase 3 — play/pause wired to engine, works first try' },
+  { phase: 3, task: 2, msg: 'phase 3 — speed + reset controls connected' },
+  { phase: 4, task: 0, msg: 'phase 4 — window.SIM_PROBE with metrics' },
+  { phase: 4, task: 1, msg: 'phase 4 — FPS tracking' },
+  { phase: 4, task: 2, msg: 'phase 4 — deterministic stepping for tests' },
+];
+
+let mode = null; // 'ungated' | 'gated'
+let stepIdx = -1;
+let completedTasks = new Set(); // "phase-task"
+let failedTasks = new Set();
+
+// 2. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+
+function currentSequence() {
+  return mode === 'gated' ? gatedOrder : ungatedOrder;
+}
+
+// 3. Render
+function render() {
+  content.innerHTML = '';
+
+  const phaseBoxW = 155;
+  const phaseBoxH = 115;
+  const startX = 40;
+  const gapX = 12;
+  const startY = 20;
+
+  // Section label
+  const sectionLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  sectionLabel.setAttribute('x', startX);
+  sectionLabel.setAttribute('y', startY);
+  sectionLabel.setAttribute('font-size', '10');
+  sectionLabel.setAttribute('font-family', 'IBM Plex Mono');
+  sectionLabel.setAttribute('fill', '#666');
+  sectionLabel.setAttribute('text-transform', 'uppercase');
+  sectionLabel.textContent = mode ? (mode === 'gated' ? 'GATED BUILD — PHASES ENFORCED' : 'UNGATED BUILD — NO ORDERING') : 'SELECT A MODE TO BEGIN';
+  content.appendChild(sectionLabel);
+
+  // Draw phase boxes
+  phases.forEach((phase, pi) => {
+    const bx = startX + pi * (phaseBoxW + gapX);
+    const by = startY + 18;
+
+    // Phase box
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', bx);
+    rect.setAttribute('y', by);
+    rect.setAttribute('width', phaseBoxW);
+    rect.setAttribute('height', phaseBoxH);
+    rect.setAttribute('rx', 3);
+
+    // Determine phase state
+    const phaseTasks = phase.tasks.map((_, ti) => `${pi}-${ti}`);
+    const allComplete = phaseTasks.every(k => completedTasks.has(k));
+    const anyActive = stepIdx >= 0 && mode && currentSequence()[stepIdx]?.phase === pi + 1;
+    const anyFailed = phaseTasks.some(k => failedTasks.has(k));
+
+    if (anyActive) {
+      rect.setAttribute('fill', ACCENT_FILL);
+      rect.setAttribute('stroke', ACCENT);
+      rect.setAttribute('stroke-width', '1.5');
+    } else if (allComplete) {
+      rect.setAttribute('fill', ACCENT_FILL_DARK);
+      rect.setAttribute('stroke', ACCENT_DIM);
+      rect.setAttribute('stroke-width', '1');
+    } else {
+      rect.setAttribute('fill', 'none');
+      rect.setAttribute('stroke', '#222');
+      rect.setAttribute('stroke-width', '1');
+    }
+    content.appendChild(rect);
+
+    // Phase label
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', bx + 10);
+    label.setAttribute('y', by + 18);
+    label.setAttribute('font-size', '9');
+    label.setAttribute('font-family', 'IBM Plex Mono');
+    label.setAttribute('letter-spacing', '0.5');
+    label.setAttribute('fill', anyActive ? ACCENT : allComplete ? ACCENT_MID : '#444');
+    label.textContent = `PHASE ${pi + 1}`;
+    content.appendChild(label);
+
+    // Phase name
+    const name = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    name.setAttribute('x', bx + 10);
+    name.setAttribute('y', by + 32);
+    name.setAttribute('font-size', '8');
+    name.setAttribute('font-family', 'IBM Plex Mono');
+    name.setAttribute('fill', anyActive ? '#888' : '#333');
+    name.textContent = phase.label;
+    content.appendChild(name);
+
+    // Draw connector arrow between phases
+    if (pi < 3) {
+      const arrowX = bx + phaseBoxW;
+      const arrowY = by + phaseBoxH / 2;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', arrowX);
+      line.setAttribute('y1', arrowY);
+      line.setAttribute('x2', arrowX + gapX);
+      line.setAttribute('y2', arrowY);
+      line.setAttribute('stroke', allComplete ? ACCENT_DIM : '#222');
+      line.setAttribute('stroke-width', '1');
+      content.appendChild(line);
+
+      // Gate indicator (for gated mode)
+      if (mode === 'gated') {
+        const gateY = arrowY;
+        const gateX = arrowX + gapX / 2;
+        const gate = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        gate.setAttribute('x', gateX - 3);
+        gate.setAttribute('y', gateY - 6);
+        gate.setAttribute('width', 6);
+        gate.setAttribute('height', 12);
+        gate.setAttribute('rx', 1);
+        gate.setAttribute('fill', allComplete ? ACCENT_FILL : '#0a0a0a');
+        gate.setAttribute('stroke', allComplete ? ACCENT_DIM : '#e6a64a');
+        gate.setAttribute('stroke-width', '1');
+        content.appendChild(gate);
+      }
+    }
+
+    // Draw task items
+    phase.tasks.forEach((task, ti) => {
+      const ty = by + 46 + ti * 22;
+      const key = `${pi}-${ti}`;
+      const isComplete = completedTasks.has(key);
+      const isFailed = failedTasks.has(key);
+      const isCurrent = stepIdx >= 0 && mode && currentSequence()[stepIdx]?.phase === pi + 1 && currentSequence()[stepIdx]?.task === ti;
+
+      // Task marker
+      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      marker.setAttribute('cx', bx + 16);
+      marker.setAttribute('cy', ty);
+      marker.setAttribute('r', 3);
+
+      if (isCurrent) {
+        marker.setAttribute('fill', ACCENT);
+        marker.setAttribute('stroke', ACCENT);
+      } else if (isFailed) {
+        marker.setAttribute('fill', '#e64a4a');
+        marker.setAttribute('stroke', '#e64a4a');
+      } else if (isComplete) {
+        marker.setAttribute('fill', ACCENT_DIM);
+        marker.setAttribute('stroke', ACCENT_DIM);
+      } else {
+        marker.setAttribute('fill', 'none');
+        marker.setAttribute('stroke', '#333');
+      }
+      marker.setAttribute('stroke-width', '1');
+      content.appendChild(marker);
+
+      // Task label
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', bx + 26);
+      txt.setAttribute('y', ty + 3);
+      txt.setAttribute('font-size', '9');
+      txt.setAttribute('font-family', 'IBM Plex Mono');
+
+      if (isCurrent) {
+        txt.setAttribute('fill', ACCENT);
+      } else if (isFailed) {
+        txt.setAttribute('fill', '#e64a4a');
+      } else if (isComplete) {
+        txt.setAttribute('fill', ACCENT_MID);
+      } else {
+        txt.setAttribute('fill', '#444');
+      }
+      txt.textContent = task;
+      content.appendChild(txt);
+    });
+  });
+
+  // Draw step history trail at bottom
+  const seq = mode ? currentSequence() : [];
+  const trailY = 175;
+
+  const trailLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  trailLabel.setAttribute('x', 40);
+  trailLabel.setAttribute('y', trailY);
+  trailLabel.setAttribute('font-size', '10');
+  trailLabel.setAttribute('font-family', 'IBM Plex Mono');
+  trailLabel.setAttribute('fill', '#666');
+  trailLabel.textContent = 'EXECUTION ORDER';
+  content.appendChild(trailLabel);
+
+  const dotStartX = 45;
+  const dotY = trailY + 22;
+  const dotGap = 52;
+  const maxVisible = 12;
+  const visibleStart = Math.max(0, stepIdx - maxVisible + 1);
+
+  for (let i = visibleStart; i < seq.length; i++) {
+    const di = i - visibleStart;
+    if (di >= maxVisible) break;
+    const dx = dotStartX + di * dotGap;
+    const step = seq[i];
+    const isActive = i === stepIdx;
+    const isDone = i < stepIdx;
+
+    // Step number
+    const numTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    numTxt.setAttribute('x', dx + 12);
+    numTxt.setAttribute('y', dotY - 2);
+    numTxt.setAttribute('text-anchor', 'middle');
+    numTxt.setAttribute('font-size', '8');
+    numTxt.setAttribute('font-family', 'IBM Plex Mono');
+    numTxt.setAttribute('fill', isActive ? ACCENT : isDone ? ACCENT_SOFT : '#333');
+    numTxt.textContent = `${i + 1}`;
+    content.appendChild(numTxt);
+
+    // Phase indicator box
+    const pRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    pRect.setAttribute('x', dx);
+    pRect.setAttribute('y', dotY + 4);
+    pRect.setAttribute('width', 24);
+    pRect.setAttribute('height', 16);
+    pRect.setAttribute('rx', 2);
+
+    // Color by phase
+    const isUngatedDrift = mode === 'ungated' && isDone;
+    if (isActive) {
+      pRect.setAttribute('fill', ACCENT_FILL);
+      pRect.setAttribute('stroke', ACCENT);
+      pRect.setAttribute('stroke-width', '1.5');
+    } else if (isDone && mode === 'ungated') {
+      // In ungated, show chaos: tasks that had to be redone in red
+      const willBeRedone = seq.slice(i + 1).some(s => s.phase === step.phase && s.task === step.task);
+      if (willBeRedone) {
+        pRect.setAttribute('fill', '#1a0a0a');
+        pRect.setAttribute('stroke', '#e64a4a');
+        pRect.setAttribute('stroke-width', '1');
+      } else {
+        pRect.setAttribute('fill', ACCENT_FILL_DARK);
+        pRect.setAttribute('stroke', ACCENT_DIM);
+        pRect.setAttribute('stroke-width', '1');
+      }
+    } else if (isDone) {
+      pRect.setAttribute('fill', ACCENT_FILL_DARK);
+      pRect.setAttribute('stroke', ACCENT_DIM);
+      pRect.setAttribute('stroke-width', '1');
+    } else {
+      pRect.setAttribute('fill', 'none');
+      pRect.setAttribute('stroke', '#222');
+      pRect.setAttribute('stroke-width', '1');
+    }
+    content.appendChild(pRect);
+
+    // Phase number in box
+    const pTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    pTxt.setAttribute('x', dx + 12);
+    pTxt.setAttribute('y', dotY + 16);
+    pTxt.setAttribute('text-anchor', 'middle');
+    pTxt.setAttribute('font-size', '9');
+    pTxt.setAttribute('font-family', 'IBM Plex Mono');
+    pTxt.setAttribute('fill', isActive ? ACCENT : isDone ? ACCENT_MID : '#333');
+    pTxt.textContent = `P${step.phase}`;
+    content.appendChild(pTxt);
+
+    // Connector line
+    if (di < maxVisible - 1 && i < seq.length - 1) {
+      const cLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      cLine.setAttribute('x1', dx + 26);
+      cLine.setAttribute('y1', dotY + 12);
+      cLine.setAttribute('x2', dx + dotGap);
+      cLine.setAttribute('y2', dotY + 12);
+      cLine.setAttribute('stroke', isDone ? ACCENT_DIM : '#222');
+      cLine.setAttribute('stroke-width', '1');
+      content.appendChild(cLine);
+    }
+  }
+
+  // Status message
+  if (mode && stepIdx >= 0 && stepIdx < seq.length) {
+    const step = seq[stepIdx];
+    statusText.textContent = step.msg;
+    if (mode === 'ungated' && (step.msg.includes('broke') || step.msg.includes('rewrite') || step.msg.includes('contradicts') || step.msg.includes('overwrites') || step.msg.includes('hardcoded') || step.msg.includes('nothing') || step.msg.includes('third') || step.msg.includes('janky') || step.msg.includes('order'))) {
+      statusText.setAttribute('fill', '#e64a4a');
+    } else {
+      statusText.setAttribute('fill', '#888');
+    }
+  } else if (mode && stepIdx >= seq.length) {
+    if (mode === 'ungated') {
+      statusText.textContent = '12 steps — still broken. screensaver, not a simulator.';
+      statusText.setAttribute('fill', '#e64a4a');
+    } else {
+      statusText.textContent = '12 steps — working simulator. boring loops converge.';
+      statusText.setAttribute('fill', ACCENT);
+    }
+  } else if (!mode) {
+    statusText.textContent = 'choose a mode, then step through';
+    statusText.setAttribute('fill', '#888');
+  }
+
+  // Stats
+  document.getElementById('stat-step').textContent = Math.max(0, stepIdx + 1);
+  document.getElementById('stat-total').textContent = seq.length;
+  const outcomeEl = document.getElementById('stat-outcome');
+  if (stepIdx >= seq.length && mode) {
+    if (mode === 'ungated') {
+      outcomeEl.textContent = 'screensaver';
+      outcomeEl.className = 'bad';
+    } else {
+      outcomeEl.textContent = 'working simulator';
+      outcomeEl.className = '';
+      outcomeEl.style.color = ACCENT;
+    }
+  } else {
+    outcomeEl.textContent = '—';
+    outcomeEl.className = '';
+    outcomeEl.style.color = '';
+  }
+  document.getElementById('mode-display').textContent = mode || 'none';
+}
+
+// 4. Event handlers
+function setMode(m) {
+  mode = m;
+  stepIdx = -1;
+  completedTasks.clear();
+  failedTasks.clear();
+  document.getElementById('btn-ungated').classList.toggle('active', m === 'ungated');
+  document.getElementById('btn-gated').classList.toggle('active', m === 'gated');
+  render();
+}
+
+function advanceStep() {
+  if (!mode) return;
+  const seq = currentSequence();
+  if (stepIdx >= seq.length - 1) {
+    stepIdx = seq.length;
+    render();
+    return;
+  }
+  stepIdx++;
+  const step = seq[stepIdx];
+  const key = `${step.phase - 1}-${step.task}`;
+
+  if (mode === 'ungated') {
+    // In ungated mode, check if prereqs are met
+    // Tasks that will be redone later are "failed" first time
+    const willBeRedone = seq.slice(stepIdx + 1).some(s => s.phase === step.phase && s.task === step.task);
+    if (willBeRedone) {
+      failedTasks.add(key);
+    } else {
+      failedTasks.delete(key);
+      completedTasks.add(key);
+    }
+  } else {
+    completedTasks.add(key);
+  }
+  render();
+}
+
+document.getElementById('btn-ungated').addEventListener('click', () => setMode('ungated'));
+document.getElementById('btn-gated').addEventListener('click', () => setMode('gated'));
+document.getElementById('btn-step').addEventListener('click', advanceStep);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (mode) setMode(mode);
+  else { stepIdx = -1; completedTasks.clear(); failedTasks.clear(); render(); }
+});
+
+// 5. Init
+render();
+</script>
+</body>
+</html>

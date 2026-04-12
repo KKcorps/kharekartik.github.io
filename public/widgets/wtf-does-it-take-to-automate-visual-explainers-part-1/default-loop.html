@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Default Agent Loop</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .bad { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// the default agent loop</div>
+  <div class="widget-subtitle">watch the agent cycle through generate, drift, rationalize, restart — press play or step through</div>
+
+  <svg id="main-svg" viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="285" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="312" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">press play to watch the loop</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-play">▶ play</button>
+    <button id="btn-step">next step →</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>restart count: <span id="stat-restarts">0</span></div>
+    <div>total steps wasted: <span class="bad" id="stat-steps">0</span></div>
+    <div>convergence: <span class="bad" id="stat-convergence">0%</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. State
+const stages = [
+  { id: 'generate', label: 'GENERATE', desc: 'model writes plausible code' },
+  { id: 'drift',    label: 'DRIFT',    desc: 'asked to improve, rewrites half the file' },
+  { id: 'rational', label: 'RATIONALIZE', desc: 'explains why broken layout is fine' },
+  { id: 'restart',  label: 'RESTART',  desc: 'give up, start over from scratch' },
+];
+
+const statusMessages = [
+  'generating initial implementation...',
+  '"let me improve the animation timing" — rewrites 200 lines',
+  '"the layout is actually correct, the overlap is intentional"',
+  'starting over. again.',
+];
+
+let currentStage = -1;
+let restarts = 0;
+let totalSteps = 0;
+let playing = false;
+let interval;
+
+// 2. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+const statRestarts = document.getElementById('stat-restarts');
+const statSteps = document.getElementById('stat-steps');
+const statConvergence = document.getElementById('stat-convergence');
+
+// Layout
+const cx = 360, cy = 135, rx = 140, ry = 90;
+const stagePositions = [
+  { x: cx, y: cy - ry },          // top: generate
+  { x: cx + rx, y: cy },          // right: drift
+  { x: cx, y: cy + ry },          // bottom: rationalize
+  { x: cx - rx, y: cy },          // left: restart
+];
+
+function angleBetween(i, j) {
+  const a1 = -Math.PI/2 + (i * Math.PI/2);
+  const a2 = -Math.PI/2 + (j * Math.PI/2);
+  return (a1 + a2) / 2;
+}
+
+// 3. Render
+function render() {
+  content.innerHTML = '';
+
+  // Draw elliptical track
+  const track = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+  track.setAttribute('cx', cx);
+  track.setAttribute('cy', cy);
+  track.setAttribute('rx', rx);
+  track.setAttribute('ry', ry);
+  track.setAttribute('fill', 'none');
+  track.setAttribute('stroke', '#222');
+  track.setAttribute('stroke-width', '1.5');
+  content.appendChild(track);
+
+  // Draw arrows along the track
+  for (let i = 0; i < 4; i++) {
+    const nextI = (i + 1) % 4;
+    const angle = -Math.PI/2 + ((i + 0.5) * Math.PI/2);
+    const ax = cx + rx * Math.cos(angle);
+    const ay = cy + ry * Math.sin(angle);
+    const tangentAngle = angle + Math.PI/2;
+    const sz = 5;
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const tipX = ax + sz * Math.cos(tangentAngle);
+    const tipY = ay + sz * Math.sin(tangentAngle);
+    const lX = ax + sz * Math.cos(tangentAngle + 2.5);
+    const lY = ay + sz * Math.sin(tangentAngle + 2.5);
+    const rX = ax + sz * Math.cos(tangentAngle - 2.5);
+    const rY = ay + sz * Math.sin(tangentAngle - 2.5);
+    arrow.setAttribute('points', `${tipX},${tipY} ${lX},${lY} ${rX},${rY}`);
+    const isActiveArrow = currentStage === i;
+    arrow.setAttribute('fill', isActiveArrow ? ACCENT : '#333');
+    content.appendChild(arrow);
+  }
+
+  // Draw stage nodes
+  stages.forEach((stage, i) => {
+    const pos = stagePositions[i];
+    const isCurrent = i === currentStage;
+    const isPast = currentStage > -1 && ((currentStage > i) || (currentStage === 3 && i === 3));
+
+    // Node background
+    const boxW = 120, boxH = 36;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', pos.x - boxW/2);
+    rect.setAttribute('y', pos.y - boxH/2);
+    rect.setAttribute('width', boxW);
+    rect.setAttribute('height', boxH);
+    rect.setAttribute('rx', 3);
+
+    if (isCurrent) {
+      rect.setAttribute('fill', ACCENT_FILL);
+      rect.setAttribute('stroke', ACCENT);
+      rect.setAttribute('stroke-width', '1.5');
+    } else if (isPast && currentStage !== -1) {
+      rect.setAttribute('fill', ACCENT_FILL_DARK);
+      rect.setAttribute('stroke', ACCENT_DIM);
+      rect.setAttribute('stroke-width', '1');
+    } else {
+      rect.setAttribute('fill', 'none');
+      rect.setAttribute('stroke', '#222');
+      rect.setAttribute('stroke-width', '1');
+    }
+    content.appendChild(rect);
+
+    // Node label
+    const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    txt.setAttribute('x', pos.x);
+    txt.setAttribute('y', pos.y + 4);
+    txt.setAttribute('text-anchor', 'middle');
+    txt.setAttribute('font-size', '10');
+    txt.setAttribute('font-family', 'IBM Plex Mono');
+    txt.setAttribute('letter-spacing', '1');
+
+    if (isCurrent) {
+      txt.setAttribute('fill', ACCENT);
+      txt.setAttribute('font-weight', '500');
+    } else if (isPast && currentStage !== -1) {
+      txt.setAttribute('fill', ACCENT_MID);
+    } else {
+      txt.setAttribute('fill', '#444');
+    }
+    txt.textContent = stage.label;
+    content.appendChild(txt);
+  });
+
+  // Update status bar with current stage info
+  if (currentStage >= 0) {
+    statusText.textContent = statusMessages[currentStage];
+    statusText.setAttribute('fill', currentStage === 3 ? '#e64a4a' : '#888');
+  } else {
+    statusText.textContent = 'press play to watch the loop';
+    statusText.setAttribute('fill', '#888');
+  }
+
+  // Stats
+  statRestarts.textContent = restarts;
+  statSteps.textContent = totalSteps;
+  statConvergence.textContent = '0%';
+}
+
+// 4. Step logic
+function advanceStep() {
+  currentStage = (currentStage + 1) % 4;
+  totalSteps++;
+  if (currentStage === 0 && totalSteps > 1) {
+    restarts++;
+  }
+  render();
+}
+
+function resetState() {
+  currentStage = -1;
+  restarts = 0;
+  totalSteps = 0;
+  playing = false;
+  clearInterval(interval);
+  document.getElementById('btn-play').textContent = '▶ play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+}
+
+// Event handlers
+document.getElementById('btn-play').addEventListener('click', function() {
+  playing = !playing;
+  this.textContent = playing ? '⏸ pause' : '▶ play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(advanceStep, 1400);
+  } else {
+    clearInterval(interval);
+  }
+});
+
+document.getElementById('btn-step').addEventListener('click', function() {
+  if (playing) {
+    playing = false;
+    clearInterval(interval);
+    document.getElementById('btn-play').textContent = '▶ play';
+    document.getElementById('btn-play').classList.remove('active');
+  }
+  advanceStep();
+});
+
+document.getElementById('btn-reset').addEventListener('click', resetState);
+
+// 5. Init
+render();
+</script>
+</body>
+</html>
