@@ -46,17 +46,7 @@ So if a user asks for:
 
 That is the core idea. Time travel is really **snapshot selection**.
 
-```mermaid
-flowchart TD
-    A["Raw Parquet files<br/>day=2026-03-29"] --> B["Snapshot v41"]
-    B --> C["Query table as of v41"]
-    B -.metadata points to next valid file set.-> D
-
-    D["Snapshot v42<br/>new files from upsert<br/>day=2026-03-30"] --> E["Query table as of v42"]
-    D -.metadata points to next valid file set.-> F
-
-    F["Snapshot v43<br/>fix for bad backfill<br/>day=2026-03-31"] --> G["Query latest table"]
-```
+<iframe src="/widgets/iceberg/snapshot-timeline.html" width="100%" height="520" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 The files are the physical storage layer. The snapshots are the logical table history. That distinction is the whole game.
 
@@ -161,6 +151,8 @@ If a buggy job corrupts data, reverting to an older snapshot is much easier than
 
 A reader can keep using a stable snapshot while a writer publishes a new one. That is a huge improvement over readers seeing an inconsistent mix of files.
 
+<iframe src="/widgets/iceberg/concurrent-isolation.html" width="100%" height="560" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 ### Auditable history
 
 You can answer practical questions such as:
@@ -197,6 +189,8 @@ In Delta Lake or Iceberg, the reader instead starts from table metadata and asks
 
 That means the table is not whatever files happen to be in the directory. The table is whatever files the current metadata says are valid.
 
+<iframe src="/widgets/iceberg/raw-vs-metadata.html" width="100%" height="520" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 That distinction is what gives you atomicity and reproducibility.
 
 ### 2. Every write becomes a metadata commit
@@ -218,6 +212,8 @@ Instead, the writer usually:
 - atomically publishes a new snapshot / version
 
 That publish step is the real commit.
+
+<iframe src="/widgets/iceberg/commit-sequence.html" width="100%" height="520" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 So when people talk about transaction logs, manifest lists, metadata JSON or snapshot lineage, they are all talking about different ways of answering the same question:
 
@@ -271,17 +267,7 @@ So if a file contains one million rows and ten thousand are deleted, the engine 
 
 That is a very important practical optimization.
 
-```mermaid
-flowchart TD
-    A["Query current table"] --> B["Read latest snapshot metadata"]
-    B --> C["Find active data files"]
-    B --> D["Find delete metadata"]
-    C --> E["Scan only relevant files"]
-    D --> F["Skip deleted rows"]
-    E --> G["Build visible table state"]
-    F --> G
-    G --> H["Return query result"]
-```
+<iframe src="/widgets/iceberg/delete-vector.html" width="100%" height="500" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 That is roughly what is happening under the hood. The engine is reconstructing the table view, not blindly reading every file.
 
@@ -322,6 +308,8 @@ So both ecosystems eventually need maintenance operations such as:
 - rewrite data files
 - rewrite manifests / metadata
 - snapshot expiration / vacuum / retention cleanup
+
+<iframe src="/widgets/iceberg/compaction-pressure.html" width="100%" height="530" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 This is one of the most important non-obvious truths: these formats reduce pain but they also introduce metadata management as a first-class operational concern.
 
