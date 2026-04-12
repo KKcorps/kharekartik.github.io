@@ -169,6 +169,8 @@ design document into a working experience.
 
 Next.js with shadcn components and PixiJS. For a single-file HTML simulator. That lasted about one day before I realized the agent could not manage a multi-file React project within its step budget. The stack simplified to what actually worked: PixiJS for rendering, GSAP for animation, Tailwind for layout, all in one `index.html` file loaded from CDN.
 
+One decision that might sound insane but actually helped: I deliberately downgraded the library versions to match what GPT-5 had seen most during training. PixiJS went from 8.12 to 6.5.8. GSAP from 3.12.5 to 3.11.5. The model was hallucinating API calls that existed in newer versions it had not been trained on. With older versions it had deeper pattern memory and produced fewer bogus calls. I still had to add explicit warnings in the prompt like "Don't rely on legacy Pixi APIs (PIXI.utils.*, PIXI.BLEND_MODES.*, or app.view) when targeting Pixi v8" because it would confuse APIs across versions. But the hallucination rate dropped noticeably. You are not optimizing for the best library. You are optimizing for the library the model actually knows.
+
 But the real story is the workflow structure that emerged over the next couple weeks. The build prompt grew from 26 lines to over 400. It specified a four-phase workflow:
 
 **Phase 1, Engine + Model.** Build a `SimulationEngine` with `update(delta)` and `render()`. Build a neutral model with entities and at least one state machine. Set up DOM scaffolding only: `#world`, `#hud`, `#timeline`, `#controls`.
@@ -179,7 +181,14 @@ But the real story is the workflow structure that emerged over the next couple w
 
 **Phase 4, Instrumentation.** Expose `window.SIM_PROBE` with metrics, deterministic stepping and FPS tracking.
 
-Each phase had explicit deliverables and the prompt told the agent not to jump ahead. Phase gating was the blunt force mechanism that stopped the agent from doing its favorite thing: writing animation code before the model existed. Without it, the agent would skip straight to making things move on screen, and the result would be a pretty animation with no data model backing it. Looks great for 10 seconds. Falls apart the moment you try to wire controls.
+Each phase had explicit deliverables and the prompt told the agent not to jump ahead. Telling it was not enough. The agent kept calling `play_and_screenshot` to admire its half-finished work before the engine logic was even wired. So I added a hard gate in the driver. A function called `_phases_1_to_3_completed()` would parse the plan checklist, look for items tagged with `[Phase 1]` through `[Phase 3]`, and check if they were all marked completed. If the agent tried to call any visual assessment tool before that, the driver returned a fake error:
+
+```
+"You are not allowed to call these tools until all items
+ till Phase 3 are completed."
+```
+
+Not a prompt suggestion. A mechanical block. The agent could not assess visuals until it had finished building. This is the kind of thing that sounds heavy-handed but was completely necessary. Without it the agent would write two lines of HTML, screenshot it, decide it was bad, rewrite everything, screenshot again, and burn through its entire step budget without building anything real.
 
 ---
 
