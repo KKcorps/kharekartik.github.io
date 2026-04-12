@@ -11,7 +11,9 @@ tags:
 featured: true
 ---
 
-For about a year I had been hand-building interactive visual explainers using Cursor IDE. p5.js animations on a canvas with interactive controls on the right. The kind where you take a complex system like Apache Kafka's consumer group protocol or an LSM tree's compaction cycle and turn it into something you can actually watch and poke at. They work well for teaching. They also take days to build by hand, and most of that time isn't creative work. It's mechanical: laying out shapes, wiring up sliders and buttons to state, tweaking animation timing until it feels right.
+For about a year I had been hand-building interactive visual explainers using Cursor IDE. p5.js animations on a canvas with interactive controls on the right. The kind where you take a complex system like Apache Kafka's consumer group protocol or an LSM tree's compaction cycle and turn it into something you can actually watch and poke at.
+
+They work well for teaching. They also take days to build by hand and most of that time isn't creative work. It's mechanical: laying out shapes, wiring up sliders and buttons to state, tweaking animation timing until it feels right.
 
 Every time I finished one, the same thought: this is way too much manual effort for something an AI should be able to do. The plan was simple. Automate the same thing I was doing manually. Point an agent at a codebase, have it understand the system, have it spit out a p5.js animation with controls. That was it.
 
@@ -19,7 +21,7 @@ The project, `spec_sim`, would eventually grow into something completely differe
 
 At the time, tools like Codex and Claude Code didn't exist yet or weren't widely available. There was no off-the-shelf agent runtime I could point at the problem. If I wanted an AI agent that could reliably generate visual explainers I'd have to build the harness myself.
 
-This is Part 1 of a series where I walk through the actual build. The dead ends, the things that didn't work, and the specific moments where I wanted to throw my laptop out the window. It wasn't easy.
+This is Part 1 of a series where I walk through the actual build. The dead ends, the things that didn't work and the specific moments where I wanted to throw my laptop out the window. It wasn't easy.
 
 ---
 
@@ -64,13 +66,15 @@ Yes, "creater" is a typo. It shipped. The design doc guidelines asked the model 
 
 The philosophy at this point was deliberate: start with the dumbest possible thing and see where it breaks. I didn't want to design an elaborate prompt upfront because I had no idea what failure modes I would actually hit. Every guardrail, every constraint, every line added to the prompt later was a response to something that went wrong in a real run. Not speculation. Not best practices. Just pain.
 
-The workflow for the first few weeks was basically this: run a session, watch the agent flail, then go through the logs manually after it finished. The driver had a logger from day one so I had full traces of every tool call, every model response, every patch attempt. I would read through a failed run, form a theory about what went wrong, then paste the relevant chunks of the log into Cursor along with my notes and let it help me figure out the fix. It was AI debugging AI, mediated by me staring at logs. Not glamorous but it was the fastest feedback loop I had.
+The workflow for the first few weeks was: run a session, watch the agent flail, then go through the logs manually after it finished. The driver had a logger from day one so I had full traces of every tool call, every model response, every patch attempt.
+
+I would read through a failed run, form a theory about what went wrong, then paste the relevant chunks of the log into Cursor along with my notes and let it help me figure out the fix. AI debugging AI, mediated by me staring at logs.
 
 ---
 
 ## The five days that felt like five weeks
 
-There was a gap between the initial scaffolding and the next meaningful commit. That gap wasn't vacation. It was me running the driver over and over, watching it fail in ways I didn't anticipate, and trying to figure out what the actual problems were before writing more code.
+There was a gap between the initial scaffolding and the next meaningful commit. That gap wasn't vacation. It was me running the driver over and over, watching it fail in ways I didn't anticipate and trying to figure out what the actual problems were before writing more code.
 
 Then the browser tool landed. Playwright-based, headless Chromium, captures screenshots and returns them as base64 images. The idea was simple: the agent needed to see what it built. 169 lines of Python wrapping `sync_playwright` to open a URL, wait for network idle, screenshot the page, optionally screenshot specific CSS selectors, optionally scroll and capture more.
 
@@ -89,7 +93,7 @@ def browse_and_screenshot(
 
 The function accepted local file paths and coerced them to `file://` URLs. Each run got its own timestamped output directory so screenshots would not clobber each other. The full page screenshot went back to the model as a base64-encoded image in the conversation history.
 
-The same week the conversation history management switched from raw string concatenation to XML-tagged structured entries. I'd read in prompting guides and on X that GPT models parse sections delimited with XML tags more reliably than markdown headers. The leaked system prompts from Cursor and other AI IDEs on GitHub confirmed it: they all used XML to structure tool calls and results. Small change. Mattered a lot. The model could now distinguish between its own reasoning, the tool it called and the result it got back:
+The same week the conversation history management switched from raw string concatenation to XML-tagged structured entries. Every leaked system prompt I could find from Cursor, Lovable, v0 used XML to structure tool calls and results. Small change. Mattered a lot. The model could now distinguish between its own reasoning, the tool it called and the result it got back:
 
 ```python
 {"role": "user", "content":
@@ -100,15 +104,17 @@ The same week the conversation history management switched from raw string conca
 
 Then everything went to shit for a bit. In the span of a single day I went through three distinct failure modes.
 
-First the planner would read a few files, produce a shallow design document and declare itself done. So I rewrote the prompt. Added step constraints, a two-tier memory system (ephemeral "working notes" vs persistent understanding), confidence thresholds (≥0.7 with ≥2 evidence points before persisting a fact), stability checks before each commit to understanding. The works. Then it wouldn't stop. It would read every file in the project, update its understanding after each one, and never converge on an actual design. The heavyweight prompt had swung the pendulum the other way.
+First the planner would read a few files, produce a shallow design document and declare itself done. So I rewrote the prompt. Added step constraints, a two-tier memory system (ephemeral "working notes" vs persistent understanding), confidence thresholds (≥0.7 with ≥2 evidence points before persisting a fact), stability checks before each commit to understanding. The works. Then it wouldn't stop. It would read every file in the project, update its understanding after each one and never converge on an actual design. The heavyweight prompt had swung the pendulum the other way.
 
 So I stripped the prompt back down. Removed working notes, removed stability checks, removed confidence thresholds. Simplified the understanding management to just "persist facts after every read_file." Still broken. The agent would either race through exploration or get stuck in an infinite reading loop. Three prompt rewrites in a single day, none of them fixed it.
 
 The fix wasn't in the prompt. It was in the output configuration. And the conversation window.
 
-The model's responses were getting truncated by the default `max_tokens` limit. It was generating a reasonable plan but the plan was getting cut off mid-sentence. The truncated output looked like the model giving up early. The model wasn't giving up. I was cutting it off. Once I bumped `max_tokens` to 8096 and set `truncation` to `"auto"`, the outputs stopped getting clipped. I also doubled `MAX_CONVERSATION_HISTORY` from 10 to 20. The agent wasn't just losing its output, it was losing its own recent context and re-exploring things it had already seen. And I had to unwind the prompt complexity I'd added while chasing the wrong problem: the forced "you must call update_understanding before any other action" nudge that was burning a tool call every turn, the `Developer:` role prefix that was confusing the model, the step-efficiency warnings that added noise without changing behavior. The final working version was simpler than any of the three failed rewrites.
+The model's responses were getting truncated by the default `max_tokens` limit. It was generating a reasonable plan but the plan was getting cut off mid-sentence. The truncated output looked like the model giving up early. The model wasn't giving up. I was cutting it off. Once I bumped `max_tokens` to 8096 and set `truncation` to `"auto"`, the outputs stopped getting clipped. The conversation history was also too short — the agent was losing its own recent context and re-exploring things it had already seen.
 
-I was debugging a prompt problem that was actually a configuration problem. Three commits of prompt engineering to fix something that needed a bigger number in a function call. This won't be the last time this happens in this story.
+And I had to unwind the prompt complexity I'd added while chasing the wrong problem: the forced "you must call update_understanding before any other action" nudge that burned a tool call every turn, the `Developer:` role prefix that confused the model, the step-efficiency warnings that added noise without changing behavior. The final working version was simpler than any of the three failed rewrites.
+
+Three commits of prompt engineering to fix something that needed a bigger number in a function call. This won't be the last time this happens in this story.
 
 ---
 
@@ -154,19 +160,19 @@ Why tools were scoped per mode is explained in the next section.
 
 ## Plan, build, then phases inside build
 
-This is probably the most important architectural story of the first month, and it happened in layers.
+This is probably the most important architectural story of the first month and it happened in layers.
 
 A note on terminology before diving in: the word "plan" shows up in two completely different contexts in this post. The **design document** (produced by plan mode) is the spec that describes what to build. The **plan checklist** (managed by the `update_plan` tool in build mode) is a todo list that tracks progress through the build phases. They serve different purposes but I ended up calling both of them "plan" in the code, which is confusing. I'll try to be explicit about which one I mean.
 
 ### The plan/build split
 
-The initial driver ran a single session. You gave it a codebase and a request, and the agent was supposed to explore the code, understand the system, design a simulator, and build it. All in one run.
+The initial driver ran a single session. You gave it a codebase and a request and the agent was supposed to explore the code, understand the system, design a simulator and build it. All in one run.
 
-That didn't work. The agent would read two files, form a half-baked understanding, and immediately start writing PixiJS code. It was like asking someone to read a textbook and write an exam in the same sitting while they're still on chapter 2. The exploration was shallow because the agent was in a hurry to start building, and the building was bad because the exploration was shallow.
+That didn't work. The agent would read two files, form a half-baked understanding and immediately start writing PixiJS code. It was like asking someone to read a textbook and write an exam in the same sitting while they're still on chapter 2. The exploration was shallow because the agent was in a hurry to start building and the building was bad because the exploration was shallow.
 
 The fix was separating the workflow into two distinct runs with a design document as the handoff artifact.
 
-**Plan mode** (`--task plan`): the agent explores the codebase, reads files, builds understanding incrementally using the `update_knowledge` scratchpad, and produces a design document in `docs/`. It has no access to build tools like `validate_html` or the plan checklist. Its only job is to understand the system and write a spec.
+**Plan mode** (`--task plan`): the agent explores the codebase, reads files, builds understanding incrementally using the `update_knowledge` scratchpad and produces a design document in `docs/`. It has no access to build tools like `validate_html` or the plan checklist. Its only job is to understand the system and write a spec.
 
 The design document had to cover specific sections:
 
@@ -179,7 +185,7 @@ The design document had to cover specific sections:
 - Failure and edge cases
 - Traceability table mapping code elements to simulator elements
 
-It also required a PixiJS plan: scenes, ticker behavior, a display tree layout with no overlap, an interaction map from controls to reactions, and a performance budget covering target FPS, max sprites, and draw call strategy.
+It also required a PixiJS plan: scenes, ticker behavior, a display tree layout with no overlap, an interaction map from controls to reactions and a performance budget covering target FPS, max sprites and draw call strategy.
 
 If the design doc was vague on any of these the build agent would fill in the gaps with hallucinations, so the plan prompt was strict about non-placeholder text in every section.
 
@@ -187,7 +193,7 @@ If the design doc was vague on any of these the build agent would fill in the ga
 
 Two runs. Two prompts. Two different tool sets. The design document was the only thing that crossed the boundary. This forced the plan agent to actually commit its understanding to paper instead of carrying it as vague context in the conversation history. And it forced the build agent to work from a spec instead of making things up as it went.
 
-One thing I noticed almost immediately in the build runs was the agent re-reading the same files constantly. It would read a file, do something, and three turns later read the exact same file again. The conversation history was capped at 10 entries, so anything older than that was gone from the model's context. The model wasn't being forgetful. I was starving it of its own history. I bumped it to 20. I considered caching reads in memory so the model wouldn't have to re-request them, but that would bloat the context with old file contents and defeat the purpose. The right fix was just giving the model enough history to remember what it had already seen.
+One thing I noticed almost immediately in the build runs was the agent re-reading the same files constantly. It would read a file, do something and three turns later read the exact same file again. Same problem as before: the conversation history was too short and the model was losing its own context. This is also where I started thinking about read caching, but stuffing old file contents into the context would bloat it and defeat the purpose. The right fix was just giving the model enough history to remember what it had already seen.
 
 ### The first build prompt
 
@@ -210,21 +216,21 @@ design document into a working experience.
 
 Next.js with shadcn components and PixiJS. For a single-file HTML simulator. That lasted about one day before I realized the agent couldn't manage a multi-file React project within its step budget. The stack simplified to what actually worked: PixiJS for rendering, GSAP for animation, Tailwind for layout, all in one `index.html` file loaded from CDN.
 
-One decision that might sound insane but actually helped: I deliberately downgraded the library versions to match what GPT-5 had seen most during training. PixiJS went from 8.12 to 6.5.8. GSAP from 3.12.5 to 3.11.5. The model was hallucinating API calls that existed in newer versions it hadn't been trained on. With older versions it had deeper pattern memory and produced fewer bogus calls. I still had to add explicit warnings in the prompt like "Don't rely on legacy Pixi APIs (PIXI.utils.*, PIXI.BLEND_MODES.*, or app.view) when targeting Pixi v8" because it would confuse APIs across versions. But the hallucination rate dropped noticeably. You're not optimizing for the best library. You're optimizing for the library the model actually knows.
+One decision that might sound insane but actually helped: I deliberately downgraded library versions to match what GPT-5 had seen most during training. The model was hallucinating API calls from newer versions it hadn't trained on. Older versions meant deeper pattern memory and fewer bogus calls. I still had to add prompt warnings about not mixing APIs across versions, but the hallucination rate dropped noticeably. You're not optimizing for the best library. You're optimizing for the library the model actually knows.
 
 ### Before phases: the free-for-all
 
 The plan/build split solved the exploration-vs-construction problem. But build mode itself had no internal structure. The prompt was basically "here is a design doc, build it, tell me when you are done." No ordering. The agent could do whatever it wanted in whatever order it wanted.
 
-What it wanted to do was write animation code first. Every single time. Ask it to build a house and it picks the curtains first. It would skip the data model, skip the engine, skip the controls, and go straight to making things move on screen. The result looked like a demo for about 10 seconds. Then you would click play/pause and nothing would happen because there was no engine. You would look at the HUD and it would show hardcoded values because nothing was wired to a model. The animation was a screensaver, not a simulator.
+What it wanted to do was write animation code first. Every single time. Ask it to build a house and it picks the curtains first. It would skip the data model, skip the engine, skip the controls and go straight to making things move on screen. The result looked like a demo for about 10 seconds. Then you would click play/pause and nothing would happen because there was no engine. You would look at the HUD and it would show hardcoded values because nothing was wired to a model. The animation was a screensaver, not a simulator.
 
-When I told the agent to fix the controls, it would patch them in as an afterthought. But by then the animation code had assumptions baked in about how state worked, and the control wiring would contradict those assumptions. The agent would fix one contradiction and introduce two more. The whole thing would spiral into a mess where every fix created new problems because the foundation was never there.
+When I told the agent to fix the controls, it would patch them in as an afterthought. But by then the animation code had assumptions baked in about how state worked and the control wiring would contradict those assumptions. The agent would fix one contradiction and introduce two more. The whole thing would spiral into a mess where every fix created new problems because the foundation was never there.
 
-The core issue was that the agent was treating the task as one big blob. It had no sense of what needed to exist before what. It didn't understand that a simulator needs a model before it needs a view, and a view before it needs choreography. It optimizes for whatever looks like progress, and animated pixels on screen look like progress even when they're sitting on nothing.
+The core issue was that the agent was treating the task as one big blob. It had no sense of what needed to exist before what. It didn't understand that a simulator needs a model before it needs a view and a view before it needs choreography. It optimizes for whatever looks like progress and animated pixels on screen look like progress even when they're sitting on nothing.
 
 ### Phases inside build
 
-The build prompt existed for exactly one day before I realized it needed structure. I watched the agent produce screensaver after screensaver and the pattern was obvious: it had no concept of dependency ordering. The fix was to decompose the build task into phases with explicit dependencies. The build prompt grew from 26 lines to over 400, and the core of it was a four-phase workflow:
+The build prompt existed for exactly one day before I realized it needed structure. I watched the agent produce screensaver after screensaver and the pattern was obvious: it had no concept of dependency ordering. The fix was to decompose the build task into phases with explicit dependencies. The build prompt grew from 26 lines to over 400 and the core of it was a four-phase workflow:
 
 **Phase 1, Engine + Model.** Build a `SimulationEngine` with `update(delta)` and `render()`. Build a neutral model with entities and at least one state machine. Set up DOM scaffolding only: `#world`, `#hud`, `#timeline`, `#controls`. The prompt explicitly said: finish this in under 3 steps. Do not use `play_and_screenshot` in this phase.
 
@@ -238,18 +244,18 @@ Each phase had explicit step budgets. The prompt told the agent exactly how many
 
 ### Enforcing it mechanically
 
-Telling the agent about phases in the prompt wasn't enough. The agent kept calling `play_and_screenshot` to admire its half-finished work before the engine logic was even wired. So I added a hard gate in the driver. A function called `_phases_1_to_3_completed()` would parse the plan checklist, look for items tagged with `[Phase 1]` through `[Phase 3]`, and check if they were all marked completed. If the agent tried to call any visual assessment tool before that, the driver returned a fake error:
+Telling the agent about phases in the prompt wasn't enough. The agent kept calling `play_and_screenshot` to admire its half-finished work before the engine logic was even wired. So I added a hard gate in the driver. A function called `_phases_1_to_3_completed()` would parse the plan checklist, look for items tagged with `[Phase 1]` through `[Phase 3]` and check if they were all marked completed. If the agent tried to call any visual assessment tool before that, the driver returned a fake error:
 
 ```
 "You are not allowed to call these tools until all items
  till Phase 3 are completed."
 ```
 
-Not a prompt suggestion. A mechanical block. The agent couldn't assess visuals until it had finished building. Without it the agent would write two lines of HTML, screenshot it, decide it was bad, rewrite everything, screenshot again, and burn through its entire step budget without building anything real.
+Not a prompt suggestion. A mechanical block. The agent couldn't assess visuals until it had finished building. Without it the agent would write two lines of HTML, screenshot it, decide it was bad, rewrite everything, screenshot again and burn through its entire step budget without building anything real.
 
 The plan tool itself became the enforcement mechanism. Each item in the checklist had to be tagged with its phase number like `[Phase 1] Engine + Model`. The driver could parse these tags and verify ordering. At most one item could be `in_progress` at a time. The agent couldn't mark Phase 3 items as in_progress while Phase 1 items were still pending. And the driver would reject any attempt to emit "AGENT COMPLETED EXECUTION" while the plan had incomplete items.
 
-This is essentially a state machine imposed on the agent from the outside. The agent doesn't decide when it's done. The harness does, based on the agent's own plan. It is a pattern I would later see described in Anthropic's [building effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) post: break a complex task into subtasks with explicit gates, control tool access per phase, and use structured state to prevent the agent from skipping ahead or bailing early. I arrived at essentially the same architecture by watching the agent fail repeatedly and plugging the holes one at a time.
+This is essentially a state machine imposed on the agent from the outside. The agent doesn't decide when it's done. The harness does, based on the agent's own plan. It is a pattern I would later see described in Anthropic's [building effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) post: break a complex task into subtasks with explicit gates, control tool access per phase and use structured state to prevent the agent from skipping ahead or bailing early. I arrived at essentially the same architecture by watching the agent fail repeatedly and plugging the holes one at a time.
 
 ### The plan checklist as a control plane
 
@@ -284,7 +290,7 @@ So the full structure by the end of the first month was three layers of control.
 
 ## The browser test that wasn't enough
 
-The `browse_and_screenshot` tool worked. It was also nowhere near enough. Here's what actually happens when you screenshot a PixiJS canvas: you get a static image of a dynamic thing. The agent would look at the screenshot, see shapes on a dark background and say "looks good." It had no way to tell if the animation was smooth, if elements overlapped when things moved, if controls actually did anything.
+The `browse_and_screenshot` tool worked. It was also nowhere near enough. Here's what actually happens when you screenshot a PixiJS canvas: you get a static image of a dynamic thing. The agent had no way to tell if the animation was smooth, if elements overlapped when things moved, if controls actually did anything.
 
 So `browse_and_screenshot` got replaced in the build prompt by two new tools that could actually catch problems: `layout_audit` and `flow_guardrails`.
 
@@ -379,11 +385,11 @@ There were also nudges. When the agent hadn't attempted a patch in a while the r
 
 ## Tool feedback: errors that teach instead of just failing
 
-This one took me longer to appreciate than it should have. Early on, when a tool failed, the error that went back to the model was whatever Python threw. A raw traceback, a generic `ValueError`, sometimes just `"error": "Unknown error"`. Helpful. The model would see that, have no idea what went wrong, and either retry the exact same thing or give up and try something completely different. Both responses wasted steps.
+This one took me longer to appreciate than it should have. Early on, when a tool failed, the error that went back to the model was whatever Python threw. A raw traceback, a generic `ValueError`, sometimes just `"error": "Unknown error"`. Helpful. The model would see that, have no idea what went wrong and either retry the exact same thing or give up and try something completely different. Both responses wasted steps.
 
-The turning point was `apply_patch`. The patch parser would reject a malformed patch with something like `"Invalid line in update section at line 47"`. That is technically correct and completely useless to the model. It doesn't know what was expected at line 47. It doesn't know if it used the wrong marker, the wrong prefix, or referenced a context line that doesn't exist. So it would guess, produce another broken patch, get another cryptic error, and burn through five turns accomplishing nothing.
+The turning point was `apply_patch`. The patch parser would reject a malformed patch with something like `"Invalid line in update section at line 47"`. That is technically correct and completely useless to the model. It doesn't know what was expected at line 47. It doesn't know if it used the wrong marker, the wrong prefix, or referenced a context line that doesn't exist. So it would guess, produce another broken patch, get another cryptic error and burn through five turns accomplishing nothing.
 
-I rewrote every error path in the patch parser to include three things: what went wrong, why it went wrong, and what to do instead. Every single `DiffError` became a mini instruction:
+I rewrote every error path in the patch parser to include three things: what went wrong, why it went wrong and what to do instead. Every single `DiffError` became a mini instruction:
 
 ```python
 raise DiffError(
@@ -408,7 +414,7 @@ raise DiffError(
 
 Same thing for `read_file`. If the model asked for a file that didn't exist, the error didn't just say "file not found." It said what file was missing and suggested running `rg` to find the right path. If the model asked to read a file it had already read and the file hadn't changed, the result said so explicitly: "this file was already read and has not changed, reuse the cached content instead." That alone cut redundant reads dramatically.
 
-For `shell`, I capped output at 80 lines but made sure the truncation message told the model how many lines were cut: "N more lines truncated." Before that fix, the model would see truncated output, assume it had the full picture, and make decisions based on incomplete information. With the count, it at least knew something was missing and could decide whether to dig deeper.
+For `shell`, I capped output at 80 lines but made sure the truncation message told the model how many lines were cut: "N more lines truncated." Before that fix, the model would see truncated output, assume it had the full picture and make decisions based on incomplete information. With the count, it at least knew something was missing and could decide whether to dig deeper.
 
 A raw traceback gets you three more failed attempts before the model stumbles into the right approach by accident. Multiply that by 30-50 turns per run and bad error messages are one of the most expensive things in the whole system.
 
@@ -426,23 +432,15 @@ The second problem was more subtle. I had an `update_understanding` tool that le
 
 This matters for prefix caching. I structured the prompt so static instructions came first (build prompt, tool schemas, aesthetics guidelines) and dynamic state (current understanding, current plan, step budget) came at the end. Static prefix gets cached, only the tail changes between turns.
 
-I also bumped `MAX_CONVERSATION_HISTORY` from 10 to 20 to 50 over the course of the month, and eventually added support for OpenAI's `previous_response_id` field so I could send only the latest tool output instead of the entire conversation. The model still had access to the full history through the response chain, but I wasn't paying to resend it every turn.
+`MAX_CONVERSATION_HISTORY` went from 10 to 20 to 50 over the course of the month as I kept finding cases where the agent was losing its own context. I eventually added support for OpenAI's `previous_response_id` field so I could send only the latest tool output instead of the entire conversation. The model still had access to the full history through the response chain, but I wasn't paying to resend it every turn.
 
 None of this is glamorous. But when you're running a mini model and each run is 30-50 turns, the difference between smart context management and naive context management is the difference between a $2 run and a $15 run.
 
 ---
 
-## What bad runs actually looked like
+## Read caching
 
-The concrete patterns that kept forcing the architecture forward:
-
-**The planner solved everything at once.** First step assumed a finished architecture. Remaining steps were filler. Fix: one active step at a time, forced status progression.
-
-**The edit surface exploded.** Fixing one label rewrote unrelated animation code. New drift introduced while solving old bugs. Fix: structured patches with bounded operations.
-
-**Source confidence was false confidence.** Code that looked coherent rendered into overlapping chaos. Fix: screenshot validation and layout audit as non-negotiable phases.
-
-**The model re-read everything constantly.** Same file, same range, same expensive tokens. Fix: read caching with mtime comparison. The runtime checked whether a file had actually changed on disk before serving it again:
+The re-reading problem I mentioned earlier eventually got a proper fix. The runtime started checking whether a file had actually changed on disk before serving it again:
 
 ```python
 def _should_skip_read_file(
@@ -459,6 +457,8 @@ def _should_skip_read_file(
     current_mtime = _get_file_mtime_if_exists(normalized_path)
     return abs(current_mtime - previous_mtime) < 1e-9
 ```
+
+If the file hadn't changed since the last read, the runtime returned the cached content instead of burning another tool call. Simple mtime comparison. Cut redundant reads dramatically.
 
 ---
 
@@ -478,6 +478,8 @@ The interesting engineering isn't in the generation. It's in everything that wra
 
 The system didn't start with a visual. It started with a harness. And that harness took a solid month to build before it could produce anything worth looking at.
 
-The single `index.html` outputs from this era were promising at first glance. Some of them actually ran. Some of them even looked decent. But they were a nightmare to maintain. The agent would load PixiJS, GSAP, Tailwind, and AlpineJS all from CDN in one file, and half the time the CDN imports would fail or conflict. The files got huge, which meant the agent needed enormous context windows just to patch them. And because everything lived in one file, a fix to the animation code could break the control wiring three hundred lines away. These problems were already obvious by the end of the first month, but I didn't have a good answer yet.
+The single `index.html` outputs from this era were promising at first glance. Some of them actually ran. Some of them even looked decent. But they were a nightmare to maintain. CDN imports would fail or conflict. The files got huge, which meant the agent needed enormous context windows just to patch them. And because everything lived in one file, a fix to the animation code could break the control wiring three hundred lines away.
 
-In Part 2 I will cover what happened when the agent started actually generating simulators with this harness, and why the single-file PixiJS approach turned out to be the wrong architecture for what I was trying to build.
+These problems were already obvious by the end of the first month, but I didn't have a good answer yet.
+
+In Part 2 I will cover what happened when the agent started actually generating simulators with this harness and why the single-file PixiJS approach turned out to be the wrong architecture for what I was trying to build.

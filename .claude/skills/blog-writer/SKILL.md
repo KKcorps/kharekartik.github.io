@@ -86,6 +86,7 @@ before drafting, but here's the enforced ruleset:
 ### What to avoid
 - No emojis, ever
 - No hyphens as em-dashes (use commas or periods to break up sentences)
+- No Oxford comma (no comma before "and" in lists — write "A, B and C" not "A, B, and C")
 - No colons in headings
 - No preamble ("In today's rapidly evolving...", "Let me walk you through...")
 - No trailing summaries or recaps at the end
@@ -94,6 +95,14 @@ before drafting, but here's the enforced ruleset:
 - No commit messages in prose
 - No "In this post, I'll cover..." meta-commentary
 - No numbered lists for narrative flow — use prose paragraphs
+- No recap sections disguised as "What X actually looked like" — if a section just bullet-points things the reader already read in detail, cut it. Only keep genuinely new content (e.g. a code snippet not shown earlier).
+
+### Paragraph discipline
+- **One idea per paragraph.** If a paragraph does two jobs (e.g. explains what something is AND why it's tedious), split it at the natural seam.
+- **Don't stack unrelated fixes into one block.** If you're listing 3+ distinct fixes or changes, either give each its own short paragraph or use a bulleted list. A wall of "I also... And I had to... And then..." loses the reader.
+- **Don't repeat the same point twice within 100 lines.** If a concept (e.g. "the model rationalizes bad output") appears in an earlier section, don't restate it — reference it or let the later, punchier version be the only one.
+- **Don't repeat the same fact across sections.** If you mention bumping a config value from X to Y in one section, don't re-tell the same bump in a later section. Tell the full progression once, in the section where it matters most. Earlier mentions should be vague ("the history was too short") so the detailed version lands fresh.
+- **Trim justification scaffolding.** If a decision is supported by 3 sources ("I read in guides... and on X... and leaked prompts confirmed it"), compress to the strongest one. The reader trusts you did the research.
 
 ### Opening
 Start with context and motivation. Why did the project exist? What problem was the user solving?
@@ -213,6 +222,10 @@ showing to the user. Common issues to catch:
 - Preamble or meta-commentary that crept in
 - Sections that explain "what" without "why"
 - Overly polite tone (should be raw and direct)
+- Paragraphs doing double duty (split them)
+- Same fact or observation stated twice across sections (keep the better one)
+- Recap sections that just summarize earlier narrative (cut or replace with new content)
+- Justification chains with 3+ sources when one would do
 
 ### Phase 4: Iterative refinement
 The user WILL provide corrections. Expect:
@@ -260,12 +273,16 @@ Before presenting a draft as "ready":
 - [ ] `draft: true` is set
 - [ ] No emojis anywhere
 - [ ] No hyphens used as em-dashes
+- [ ] No Oxford commas (no comma before "and")
 - [ ] No colons in headings
 - [ ] No preamble or trailing summary
 - [ ] No dates or commit messages in prose
 - [ ] No "In this post" meta-commentary
 - [ ] Opening paragraph hooks with a concrete situation
 - [ ] Every section explains WHY, not just what
+- [ ] No paragraph serves two unrelated ideas
+- [ ] No fact or observation repeated across sections
+- [ ] No recap/summary sections restating earlier narrative
 - [ ] Code blocks use real implementation, not toy examples
 - [ ] Bold on key concepts at first mention
 - [ ] 250-500 lines of markdown

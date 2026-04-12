@@ -1842,7 +1842,7 @@ body.article-page .site-main {
 
 .article-page .article-header {
 	padding: 32px 0 36px;
-	max-width: 760px;
+	max-width: none;
 	border: 0;
 }
 
@@ -1879,7 +1879,7 @@ body.article-page .site-main {
 
 .article-page .article-body {
 	padding: 36px 0 0;
-	max-width: 680px;
+	max-width: none;
 }
 
 .article-page .prose > blockquote:first-child {
