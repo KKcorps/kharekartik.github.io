@@ -92,7 +92,7 @@ The first thing I had to unlearn was thinking of Arrow as a fancier way to seria
 
 Arrow is genuinely columnar. A batch of data is a `VectorSchemaRoot` which is a collection of `FieldVector`s with one per column. The natural rhythm is to fill all values for column A then all values for column B, not push row objects through one at a time. I started with row by row logic in the hot path because it felt natural and Arrow let me do it, but it quietly made me pay at scale.
 
-<iframe src="/widgets/arrow-perf/column-vector.html" width="100%" height="480" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+<iframe src="/widgets/arrow-perf/column-vector.html" width="100%" height="560" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 The first design decision that reflected this properly was splitting sort columns and non sort columns into separate `VectorSchemaRoot`s. The immediate benefit was cleaner sorting since narrower schemas are easier to reason about and less likely to corrupt unrelated fields when you permute rows to reorder them.
 
