@@ -54,6 +54,7 @@
   <div class="controls">
     <button id="btn-prev">&larr; prev</button>
     <button id="btn-next">next &rarr;</button>
+    <button id="btn-play">&#9654; play</button>
     <button id="btn-reset">reset</button>
   </div>
   <div class="stats">
@@ -111,6 +112,8 @@ const STEPS = [
 
 // 2. State
 let currentStep = 0;
+let playing = false;
+let interval;
 
 // 3. DOM refs
 const content = document.getElementById('content');
@@ -353,7 +356,27 @@ document.getElementById('btn-next').addEventListener('click', () => {
 document.getElementById('btn-prev').addEventListener('click', () => {
   if (currentStep > 0) { currentStep--; render(); }
 });
-document.getElementById('btn-reset').addEventListener('click', () => { currentStep = 0; render(); });
+document.getElementById('btn-play').addEventListener('click', function () {
+  playing = !playing;
+  this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+      else {
+        clearInterval(interval); playing = false;
+        document.getElementById('btn-play').textContent = '\u25B6 play';
+        document.getElementById('btn-play').classList.remove('active');
+      }
+    }, 1200);
+  } else { clearInterval(interval); }
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0; playing = false; clearInterval(interval);
+  document.getElementById('btn-play').textContent = '\u25B6 play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+});
 
 // 6. Init
 render();
