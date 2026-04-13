@@ -138,6 +138,7 @@ These are real corrections from past sessions. Study them.
 ### What to avoid
 - No emojis, ever
 - No hyphens as em-dashes (use commas or periods to break up sentences)
+- No hyphenated compound phrases in prose. Write `per row`, `off heap`, `zero copy`, `type specialized`, `variable width`, `in place`, `map reduce`, `row by row`, `built in`, `memory mapped`, `cross language`, `batch scoped`, `sort only`, etc. Never `per-row`, `off-heap`, `zero-copy`, etc. Hyphens are only acceptable in YAML tags, URLs, code identifiers and proper nouns like tool names (`async-profiler`).
 - No Oxford comma (no comma before "and" in lists — write "A, B and C" not "A, B, and C")
 - No colons in headings
 - No preamble ("In today's rapidly evolving...", "Let me walk you through...")
@@ -148,6 +149,13 @@ These are real corrections from past sessions. Study them.
 - No "In this post, I'll cover..." meta-commentary
 - No numbered lists for narrative flow — use prose paragraphs
 - No recap sections disguised as "What X actually looked like" — if a section just bullet-points things the reader already read in detail, cut it. Only keep genuinely new content (e.g. a code snippet not shown earlier).
+
+### Headings
+- Headings should be opinionated and memorable, not generic labels.
+- **Bad:** "The root allocator problem", "Compression", "Sorting", "The read side"
+- **Good:** "The off heap roulette", "Not every byte deserves to be squeezed", "Sorting under a memory ceiling", "Bounded memory, unbounded edge cases", "Death by a thousand casts"
+- A good heading has a point of view or tells the reader what they'll learn. A bad heading is just a topic name.
+- Don't front load setup sections with jargon that gets explained later. Keep setups simple and narrative.
 
 ### Paragraph discipline
 - **One idea per paragraph.** If a paragraph does two jobs (e.g. explains what something is AND why it's tedious), split it at the natural seam.
@@ -333,6 +341,7 @@ Before presenting a draft as "ready":
 - [ ] `draft: true` is set
 - [ ] No emojis anywhere
 - [ ] No hyphens used as em-dashes
+- [ ] No hyphenated compound phrases in prose (run the linter from section 11)
 - [ ] No Oxford commas (no comma before "and")
 - [ ] No colons in headings
 - [ ] No preamble or trailing summary
@@ -354,7 +363,64 @@ Before presenting a draft as "ready":
 
 ---
 
-## 10. Example blog posts for reference
+## 10. Style linter
+
+After writing or editing a blog post, run these checks against the markdown file to catch style
+violations mechanically. Run them using Grep/Bash before presenting the draft.
+
+### Hyphenated compounds in prose
+
+Scan for common hyphenated phrases that should not be hyphenated. Exclude lines that are
+frontmatter (between `---` markers), code blocks (between `` ``` `` markers), URLs, and iframe tags.
+
+```bash
+# Find hyphenated compound phrases in prose (excluding code blocks, frontmatter, URLs, iframes)
+# Review each match — false positives include tool names (async-profiler) and YAML tags
+grep -n -E '\b(per|off|zero|type|variable|in|map|row|built|memory|cross|batch|sort|non|multi|pre|re|well|all|out|mis|self|un|over|under|first|sub|semi|half|mid|co|inter|intra|meta|post|anti|counter|super|hyper|ultra)-[a-z]' "$FILE" | grep -v '```' | grep -v 'http' | grep -v 'iframe' | grep -v '^[0-9]*:  -'
+```
+
+Known false positives to ignore:
+- Tool/library names: `async-profiler`, `pre-commit`
+- YAML tags in frontmatter: `distributed-systems`, `data-engineering`
+- URLs and file paths
+- Code block contents
+
+### Oxford commas
+
+```bash
+# Find ", and" patterns (Oxford commas)
+grep -n ', and ' "$FILE" | grep -v '```'
+```
+
+### Staccato fragments
+
+```bash
+# Find short sentences (under ~40 chars ending in period) — review manually for fragments
+grep -n -E '^\S.{1,38}\.$' "$FILE" | grep -v '```' | grep -v '^[0-9]*:  -' | grep -v '^\-\-\-'
+```
+
+This catches candidates but requires manual review. Not every short sentence is a violation —
+only standalone declarative facts like "Arrow's IPC writer is chatty." or "This one was just wrong."
+
+### Section heading quality
+
+```bash
+# List all ## headings for manual review — check for generic labels
+grep -n '^## ' "$FILE"
+```
+
+Review each heading: does it have a point of view? Would a reader remember it? Generic labels
+like "Compression", "Sorting", "The X problem" should be replaced with opinionated alternatives.
+
+### Run all checks
+
+After drafting, run the full linter sequence against the file. Fix all true positives before
+showing the draft to the user. This catches the mechanical violations so the user's review
+can focus on substance, not formatting.
+
+---
+
+## 11. Example blog posts for reference
 
 Read these existing posts to calibrate voice and structure before writing:
 
