@@ -74,7 +74,7 @@ An 8 MB buffer was the sweet spot for our workload. Too small and you're still i
 
 ---
 
-## Compression
+## Not every byte deserves to be squeezed
 
 The writer supports multiple compression modes including `LZ4_FRAME` and `ZSTD`. I tried multiple codecs and different ZSTD levels. In a pipeline where you're optimizing for throughput on large cold datasets, compression pays for itself. But this particular path was latency-sensitive. The files are intermediate, written by mappers, read by reducers and discarded. They don't live long enough for smaller file sizes to matter much.
 
@@ -86,7 +86,7 @@ That's not because compression was unavailable. It's because for this use case, 
 
 ---
 
-## Arrow is not row serialization with better marketing
+## The columnar mindset shift
 
 The first thing I had to unlearn was thinking of Arrow as a fancier way to serialize rows. If you approach it that way the code still compiles but your design instincts end up fighting the format at every turn.
 
@@ -173,7 +173,7 @@ None of these individually sounds like much. Together they're the difference bet
 
 ---
 
-## The root allocator problem
+## The off-heap roulette
 
 Arrow's Java library manages all its off-heap memory through a `RootAllocator` where you create one with a byte limit and every `FieldVector`, every `VectorSchemaRoot` and every buffer allocation draws from that pool.
 
@@ -189,7 +189,7 @@ The rule that emerged was simple: be conservative on initial sizing, instrument 
 
 ---
 
-## Sorting
+## Sorting under a memory ceiling
 
 Sorting is where this project became genuinely difficult. A sorted pipeline has to keep memory bounded *and* present rows in the right global order and those two goals fight each other constantly.
 
@@ -225,7 +225,7 @@ If a comparison can be done without allocating strings, without routing through 
 
 ---
 
-## The read side
+## Bounded memory, unbounded edge cases
 
 Everything I described so far was about discipline on the write path. The read side introduced a completely different category of problem: **state management under bounded memory** where correctness invariants span batch boundaries.
 
