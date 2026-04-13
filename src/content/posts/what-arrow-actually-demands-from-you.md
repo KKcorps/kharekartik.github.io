@@ -12,7 +12,7 @@ tags:
 featured: false
 ---
 
-I was building a custom map-reduce pipeline where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them and the whole thing sounded clean until the outputs needed to be sorted. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. None of that is a lie. But there is a gap between what the spec promises and what you actually encounter when you sit down with the [Java APIs](https://arrow.apache.org/docs/java/) and try to build a real reader and writer and make both of them correct *and* fast.
+I was building a custom map-reduce pipeline where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. None of that is a lie. But there is a gap between what the spec promises and what you actually encounter when you sit down with the [Java APIs](https://arrow.apache.org/docs/java/) and try to build a real reader and writer and make both of them correct *and* fast.
 
 That gap is filled with very specific traps, the kind that cost days and only surface after you think you're done.
 
@@ -20,9 +20,11 @@ That gap is filled with very specific traps, the kind that cost days and only su
 
 ## The setup
 
-The outputs could be sorted. Mappers didn't just dump rows, they produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory.
+Even the basic map-reduce path was not simple. Getting Arrow to write efficiently, manage off-heap memory correctly, avoid per-row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics was already a full project. The write path, the buffered I/O, the allocator sizing, the type-specialized codecs, all of that had to work before sorting even entered the picture.
 
-That sorted merge requirement is what turned a "just serialize some columns" job into a full negotiation with Arrow's internals. The traps I hit are not specific to my setup. They show up wherever Arrow starts doing real work.
+On top of that, the outputs could be sorted. Mappers didn't just dump rows, they produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory. That added an entirely separate layer of complexity: bounded memory windows, heap-based merging, lookahead across batch boundaries, cache invalidation on reload.
+
+The traps I hit span both layers. They show up wherever Arrow starts doing real work.
 
 ---
 
