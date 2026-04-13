@@ -12,19 +12,17 @@ tags:
 featured: false
 ---
 
-I was building a custom map-reduce pipeline where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. None of that is a lie. But there is a gap between what the spec promises and what you actually encounter when you sit down with the [Java APIs](https://arrow.apache.org/docs/java/) and try to build a real reader and writer and make both of them correct *and* fast.
-
-That gap is filled with very specific traps, the kind that cost days and only surface after you think you're done.
+So in 2024, I was building a custom map-reduce framework where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. I read that and thought this would be the easy part of the project. Little did I know.
 
 ---
 
 ## The setup
 
-Even the basic map-reduce path was not simple. Getting Arrow to write efficiently, manage off-heap memory correctly, avoid per-row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics was already a full project. The write path, the buffered I/O, the allocator sizing, the type-specialized codecs, all of that had to work before sorting even entered the picture.
+The map-reduce path itself was already not simple. I needed Arrow to write efficiently, manage off-heap memory correctly, avoid per-row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics. The write path, the buffered I/O, the allocator sizing, the type-specialized codecs, all of that had to work before I could even think about the next problem.
 
-On top of that, the outputs could be sorted. Mappers didn't just dump rows, they produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory. That added an entirely separate layer of complexity: bounded memory windows, heap-based merging, lookahead across batch boundaries, cache invalidation on reload.
+And the next problem was sorting. The outputs could be sorted, which meant mappers didn't just dump rows but produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory. That added an entirely separate layer on top of what was already a full project: bounded memory windows, heap-based merging, lookahead across batch boundaries, cache invalidation on reload.
 
-The traps I hit span both layers. They show up wherever Arrow starts doing real work.
+What follows is every trap I hit across both layers. Most of them only surfaced after I thought I was done.
 
 ---
 
