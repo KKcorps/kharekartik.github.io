@@ -12,7 +12,7 @@ tags:
 featured: false
 ---
 
-So in 2024, I was building a custom map-reduce framework where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop, cheap serialization. I read that and thought this would be the easy part of the project. Little did I know.
+So in 2024, I was building a custom map-reduce framework where [Apache Arrow](https://arrow.apache.org/) was the intermediate format. Mappers write Arrow files, reducers read them. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra: columnar format, zero-copy reads, cross-language interop and cheap serialization. I read all that and thought this would be the easy part of the project. Little did I know.
 
 ---
 
