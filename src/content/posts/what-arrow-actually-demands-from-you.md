@@ -18,11 +18,11 @@ So in 2024, I was building a custom map-reduce framework and I needed an interme
 
 ## The setup
 
-The map-reduce path itself was already not simple. I needed Arrow to write efficiently, manage off-heap memory correctly, avoid per-row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics. The write path, the buffered I/O, the allocator sizing, the type-specialized codecs, all of that had to work before I could even think about the next problem.
+Just getting Arrow to read and write correctly was already a full project. The [Java APIs](https://arrow.apache.org/docs/java/) don't hold your hand the way PyArrow does, so I had to figure out a lot of things the hard way: how to write efficiently, how to manage memory that lives outside the JVM heap and how to avoid sneaking per-row overhead into what's supposed to be a columnar format.
 
-And the next problem was sorting. The outputs could be sorted, which meant mappers didn't just dump rows but produced data in a specific order and reducers sometimes needed to merge several sorted Arrow outputs into one globally ordered stream without loading everything into memory. That added an entirely separate layer on top of what was already a full project: bounded memory windows, heap-based merging, lookahead across batch boundaries, cache invalidation on reload.
+And then there was sorting. The outputs could be sorted, which meant reducers sometimes needed to merge several sorted files into one globally ordered stream without loading everything into memory. That added a completely separate layer of complexity on top of what was already not simple.
 
-What follows is every trap I hit across both layers. Most of them only surfaced after I thought I was done.
+What follows is every trap I hit across both of those layers. Most of them only showed up after I thought I was done.
 
 ---
 
