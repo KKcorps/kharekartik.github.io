@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bad Data Spread</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px; overflow: hidden;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// bad data propagation</div>
+  <div class="widget-subtitle">step through the commit cycle to see how one server's bad data spreads to all</div>
+
+  <svg id="main-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="352" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="377" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">step through the commit cycle</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&larr; prev</button>
+    <button id="btn-next">next &rarr;</button>
+    <button id="btn-play">&#9654; play</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>step: <span id="stat-step">0</span> / 5</div>
+    <div>corrupted servers: <span id="stat-corrupt">0</span> / 4</div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. Steps
+const STEPS = [
+  {
+    id: 0,
+    title: 'After consumption',
+    servers: [
+      { name: 'Server 0', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: false },
+      { name: 'Server 2', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 3', data: 'correct', checksum: '0xA3F2', selected: false }
+    ],
+    deepStore: null,
+    status: 'All servers consumed to the same offset. Server 1 has corrupt merge values.',
+    corrupted: 1
+  },
+  {
+    id: 1,
+    title: 'Controller picks winner',
+    servers: [
+      { name: 'Server 0', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: true },
+      { name: 'Server 2', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 3', data: 'correct', checksum: '0xA3F2', selected: false }
+    ],
+    deepStore: null,
+    status: 'Controller selects Server 1 as winner — same offset, so it looks equivalent.',
+    corrupted: 1
+  },
+  {
+    id: 2,
+    title: 'Pushed to deep store',
+    servers: [
+      { name: 'Server 0', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: true },
+      { name: 'Server 2', data: 'correct', checksum: '0xA3F2', selected: false },
+      { name: 'Server 3', data: 'correct', checksum: '0xA3F2', selected: false }
+    ],
+    deepStore: { data: 'corrupt', checksum: '0xB7D1' },
+    status: 'Server 1\'s corrupt segment is pushed to deep store as the canonical copy.',
+    corrupted: 1
+  },
+  {
+    id: 3,
+    title: 'Checksum mismatch detected',
+    servers: [
+      { name: 'Server 0', data: 'correct', checksum: '0xA3F2', mismatch: true, selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: true },
+      { name: 'Server 2', data: 'correct', checksum: '0xA3F2', mismatch: true, selected: false },
+      { name: 'Server 3', data: 'correct', checksum: '0xA3F2', mismatch: true, selected: false }
+    ],
+    deepStore: { data: 'corrupt', checksum: '0xB7D1' },
+    status: 'Servers 0, 2, 3 detect checksum mismatch (0xA3F2 \u2260 0xB7D1). They log a warning.',
+    corrupted: 1
+  },
+  {
+    id: 4,
+    title: 'Correct data replaced',
+    servers: [
+      { name: 'Server 0', data: 'corrupt', checksum: '0xB7D1', replaced: true, selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: false },
+      { name: 'Server 2', data: 'corrupt', checksum: '0xB7D1', replaced: true, selected: false },
+      { name: 'Server 3', data: 'corrupt', checksum: '0xB7D1', replaced: true, selected: false }
+    ],
+    deepStore: { data: 'corrupt', checksum: '0xB7D1' },
+    status: 'All servers replace their local data with deep store copy. Correct data is gone.',
+    corrupted: 4
+  },
+  {
+    id: 5,
+    title: 'Cluster-wide corruption',
+    servers: [
+      { name: 'Server 0', data: 'corrupt', checksum: '0xB7D1', selected: false },
+      { name: 'Server 1', data: 'corrupt', checksum: '0xB7D1', selected: false },
+      { name: 'Server 2', data: 'corrupt', checksum: '0xB7D1', selected: false },
+      { name: 'Server 3', data: 'corrupt', checksum: '0xB7D1', selected: false }
+    ],
+    deepStore: { data: 'corrupt', checksum: '0xB7D1' },
+    status: 'All 4 servers and deep store now have corrupt data. Single-node race became cluster-wide.',
+    corrupted: 4
+  }
+];
+
+// 2. State
+let currentStep = 0;
+let playing = false;
+let interval;
+
+// 3. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+const statStep = document.getElementById('stat-step');
+const statCorrupt = document.getElementById('stat-corrupt');
+
+// Layout
+const SERVER_W = 140;
+const SERVER_H = 80;
+const SERVER_GAP = 14;
+const SERVER_Y = 70;
+const CTRL_Y = 14;
+const DEEP_Y = 220;
+const DEEP_W = 240;
+const DEEP_H = 60;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'middle'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+// 4. Render
+function render() {
+  content.innerHTML = '';
+  const step = STEPS[currentStep];
+
+  // Controller
+  content.appendChild(makeSvgEl('rect', {
+    x: 290, y: CTRL_Y, width: 140, height: 30, rx: 3,
+    fill: 'none', stroke: '#444', 'stroke-width': 1
+  }));
+  addText(content, 360, CTRL_Y + 20, 'CONTROLLER', { fill: '#666', size: '9' });
+
+  // Servers
+  const totalW = 4 * SERVER_W + 3 * SERVER_GAP;
+  const startX = (720 - totalW) / 2;
+
+  for (let i = 0; i < 4; i++) {
+    const sx = startX + i * (SERVER_W + SERVER_GAP);
+    const s = step.servers[i];
+
+    const isCorrupt = s.data === 'corrupt';
+    const isMismatch = s.mismatch;
+    const isReplaced = s.replaced;
+    const isSelected = s.selected;
+
+    let stroke = isCorrupt ? '#e64a4a' : ACCENT;
+    let fill = isCorrupt ? '#1a0a0a' : ACCENT_FILL;
+    let sw = 1;
+
+    if (isSelected) { sw = 2; stroke = '#e6a64a'; fill = '#1a150a'; }
+    if (isMismatch) { stroke = '#e6a64a'; fill = '#1a150a'; }
+    if (isReplaced) { stroke = '#e64a4a'; fill = '#1a0a0a'; sw = 1.5; }
+
+    content.appendChild(makeSvgEl('rect', {
+      x: sx, y: SERVER_Y, width: SERVER_W, height: SERVER_H, rx: 3,
+      fill, stroke, 'stroke-width': sw
+    }));
+
+    addText(content, sx + SERVER_W / 2, SERVER_Y + 18, s.name, {
+      fill: isCorrupt ? '#e64a4a' : ACCENT, size: '10'
+    });
+
+    // Data indicator
+    const dataLabel = isCorrupt ? 'CORRUPT' : 'CORRECT';
+    const dataColor = isCorrupt ? '#e64a4a' : ACCENT_MID;
+    addText(content, sx + SERVER_W / 2, SERVER_Y + 38, dataLabel, {
+      fill: dataColor, size: '9'
+    });
+
+    // Checksum
+    addText(content, sx + SERVER_W / 2, SERVER_Y + 54, s.checksum, {
+      fill: '#555', size: '9'
+    });
+
+    // Selection indicator
+    if (isSelected) {
+      addText(content, sx + SERVER_W / 2, SERVER_Y + 72, '\u2191 WINNER', {
+        fill: '#e6a64a', size: '8'
+      });
+    }
+
+    // Mismatch warning
+    if (isMismatch) {
+      addText(content, sx + SERVER_W - 4, SERVER_Y + 12, '\u26A0', {
+        fill: '#e6a64a', size: '10', anchor: 'end'
+      });
+    }
+
+    // Replaced indicator
+    if (isReplaced) {
+      // Strikethrough on old checksum
+      addText(content, sx + SERVER_W / 2, SERVER_Y + 72, 'REPLACED', {
+        fill: '#e64a4a', size: '8'
+      });
+    }
+
+    // Arrow from controller to selected server
+    if (isSelected) {
+      content.appendChild(makeSvgEl('line', {
+        x1: 360, y1: CTRL_Y + 30, x2: sx + SERVER_W / 2, y2: SERVER_Y,
+        stroke: '#e6a64a', 'stroke-width': 1, 'stroke-dasharray': '3,3'
+      }));
+    }
+  }
+
+  // Deep store
+  const deepX = (720 - DEEP_W) / 2;
+  if (step.deepStore) {
+    const ds = step.deepStore;
+    content.appendChild(makeSvgEl('rect', {
+      x: deepX, y: DEEP_Y, width: DEEP_W, height: DEEP_H, rx: 3,
+      fill: '#1a0a0a', stroke: '#e64a4a', 'stroke-width': 1.5
+    }));
+    addText(content, 360, DEEP_Y + 22, 'DEEP STORE', { fill: '#666', size: '9' });
+    addText(content, 360, DEEP_Y + 40, `${ds.data.toUpperCase()} DATA (${ds.checksum})`, {
+      fill: '#e64a4a', size: '10'
+    });
+
+    // Arrow from winner to deep store
+    if (currentStep >= 2) {
+      const winnerX = startX + 1 * (SERVER_W + SERVER_GAP) + SERVER_W / 2;
+      content.appendChild(makeSvgEl('line', {
+        x1: winnerX, y1: SERVER_Y + SERVER_H,
+        x2: 360, y2: DEEP_Y,
+        stroke: currentStep === 2 ? '#e64a4a' : '#333', 'stroke-width': 1
+      }));
+      if (currentStep === 2) {
+        const midX = (winnerX + 360) / 2;
+        const midY = (SERVER_Y + SERVER_H + DEEP_Y) / 2;
+        addText(content, midX + 10, midY, 'push', { fill: '#e64a4a', size: '8' });
+      }
+    }
+
+    // Arrows from deep store to other servers (step 4+)
+    if (currentStep >= 4) {
+      for (let i = 0; i < 4; i++) {
+        if (i === 1) continue; // Server 1 is the source
+        const sx = startX + i * (SERVER_W + SERVER_GAP) + SERVER_W / 2;
+        content.appendChild(makeSvgEl('line', {
+          x1: 360, y1: DEEP_Y,
+          x2: sx, y2: SERVER_Y + SERVER_H,
+          stroke: '#e64a4a', 'stroke-width': 1, 'stroke-dasharray': '3,3'
+        }));
+      }
+    }
+  } else {
+    content.appendChild(makeSvgEl('rect', {
+      x: deepX, y: DEEP_Y, width: DEEP_W, height: DEEP_H, rx: 3,
+      fill: 'none', stroke: '#222', 'stroke-width': 1
+    }));
+    addText(content, 360, DEEP_Y + 22, 'DEEP STORE', { fill: '#444', size: '9' });
+    addText(content, 360, DEEP_Y + 40, 'awaiting commit', { fill: '#333', size: '9' });
+  }
+
+  // Progression visual at bottom
+  const progY = 305;
+  addText(content, 360, progY, 'CORRUPTION SPREAD', { fill: '#666', size: '8' });
+  const dotY = progY + 14;
+  for (let i = 0; i < 4; i++) {
+    const dx = 320 + i * 28;
+    const isCorrupt = step.servers[i].data === 'corrupt';
+    content.appendChild(makeSvgEl('circle', {
+      cx: dx, cy: dotY, r: 6,
+      fill: isCorrupt ? '#e64a4a' : ACCENT_FILL,
+      stroke: isCorrupt ? '#e64a4a' : ACCENT_DIM, 'stroke-width': 1
+    }));
+    addText(content, dx, dotY + 16, `S${i}`, { fill: '#444', size: '7', anchor: 'middle' });
+  }
+
+  // Status
+  statusText.textContent = step.status;
+  statusText.setAttribute('fill', step.corrupted >= 4 ? '#e64a4a' : '#888');
+
+  // Stats
+  statStep.textContent = currentStep;
+  statCorrupt.textContent = step.corrupted;
+  statCorrupt.style.color = step.corrupted >= 4 ? '#e64a4a' : '';
+  statCorrupt.className = step.corrupted >= 4 ? 'del' : '';
+}
+
+// 5. Event handlers
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (currentStep > 0) { currentStep--; render(); }
+});
+
+document.getElementById('btn-play').addEventListener('click', function () {
+  playing = !playing;
+  this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+      else {
+        clearInterval(interval);
+        playing = false;
+        document.getElementById('btn-play').textContent = '\u25B6 play';
+        document.getElementById('btn-play').classList.remove('active');
+      }
+    }, 1800);
+  } else {
+    clearInterval(interval);
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0;
+  playing = false;
+  clearInterval(interval);
+  document.getElementById('btn-play').textContent = '\u25B6 play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+});
+
+// 6. Init
+render();
+</script>
+</body>
+</html>

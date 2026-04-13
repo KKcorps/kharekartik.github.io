@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Latch vs Gate</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px; overflow: hidden;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .mode-label {
+    font-size: 11px; color: #666; margin-left: auto;
+  }
+  .mode-label span { color: var(--w-accent); }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// one-shot latch vs per-segment gate</div>
+  <div class="widget-subtitle">toggle between the broken guard and the correct fix, then step through segment transitions</div>
+
+  <svg id="main-svg" viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="332" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="357" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">choose a guard mode, then step through transitions</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-latch" class="active">one-shot latch</button>
+    <button id="btn-gate">per-segment gate</button>
+    <span style="color:#333; margin: 0 4px;">|</span>
+    <button id="btn-prev">&larr; prev</button>
+    <button id="btn-next">next &rarr;</button>
+    <button id="btn-reset">reset</button>
+    <div class="mode-label">guard: <span id="mode-span">one-shot latch</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. Step definitions per mode
+const LATCH_STEPS = [
+  {
+    title: 'Server boot',
+    latchState: 'closed',
+    segments: [],
+    status: 'Server starting. One-shot latch is CLOSED — blocks all consumption.',
+    outcome: 'neutral'
+  },
+  {
+    title: 'Initial segments loaded',
+    latchState: 'open',
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true }
+    ],
+    status: 'All existing segments loaded. Latch flips to OPEN. It will never close again.',
+    outcome: 'ok'
+  },
+  {
+    title: 'Days later: SEG_M created',
+    latchState: 'open',
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'transitioning', inMeta: false }
+    ],
+    status: 'New segment SEG_M state transition scheduled. Latch is still permanently OPEN.',
+    outcome: 'warn'
+  },
+  {
+    title: 'SEG_M transition delayed',
+    latchState: 'open',
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'stuck', inMeta: false }
+    ],
+    status: 'SEG_M stuck in message queue. Latch doesn\'t know. It already fired at boot.',
+    outcome: 'warn'
+  },
+  {
+    title: 'SEG_M1 starts consuming',
+    latchState: 'open',
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'stuck', inMeta: false },
+      { name: 'SEG_M1', state: 'consuming', inMeta: false }
+    ],
+    status: 'SEG_M1 passes the latch (it\'s permanently open). Consumes WITHOUT SEG_M in metadata.',
+    outcome: 'error'
+  },
+  {
+    title: 'Partial upsert merges fail silently',
+    latchState: 'open',
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'stuck', inMeta: false },
+      { name: 'SEG_M1', state: 'bad-data', inMeta: false }
+    ],
+    status: 'Merges produce Long.MIN_VALUE. The latch could not prevent this — wrong granularity.',
+    outcome: 'error'
+  }
+];
+
+const GATE_STEPS = [
+  {
+    title: 'Server boot',
+    gates: {},
+    segments: [],
+    status: 'Server starting. Per-segment gates are initialized per partition.',
+    outcome: 'neutral'
+  },
+  {
+    title: 'Initial segments loaded',
+    gates: { 'SEG_A': 'open', 'SEG_B': 'open' },
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true }
+    ],
+    status: 'All existing segments loaded. Each has its own gate. Gates are partition-scoped.',
+    outcome: 'ok'
+  },
+  {
+    title: 'SEG_M created, gate allocated',
+    gates: { 'SEG_A': 'open', 'SEG_B': 'open', 'SEG_M': 'closed' },
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'transitioning', inMeta: false }
+    ],
+    status: 'New gate created for SEG_M. It is CLOSED until SEG_M is fully in metadata.',
+    outcome: 'ok'
+  },
+  {
+    title: 'SEG_M transition delayed',
+    gates: { 'SEG_A': 'open', 'SEG_B': 'open', 'SEG_M': 'closed' },
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'stuck', inMeta: false }
+    ],
+    status: 'SEG_M is stuck but its gate remains CLOSED. Downstream cannot proceed.',
+    outcome: 'ok'
+  },
+  {
+    title: 'SEG_M1 blocked by gate',
+    gates: { 'SEG_A': 'open', 'SEG_B': 'open', 'SEG_M': 'closed' },
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'stuck', inMeta: false },
+      { name: 'SEG_M1', state: 'blocked', inMeta: false }
+    ],
+    status: 'SEG_M1 CANNOT start consuming. Per-segment gate for SEG_M is still closed. Race prevented.',
+    outcome: 'ok'
+  },
+  {
+    title: 'SEG_M completes, gate opens',
+    gates: { 'SEG_A': 'open', 'SEG_B': 'open', 'SEG_M': 'open' },
+    segments: [
+      { name: 'SEG_A', state: 'loaded', inMeta: true },
+      { name: 'SEG_B', state: 'loaded', inMeta: true },
+      { name: 'SEG_M', state: 'loaded', inMeta: true },
+      { name: 'SEG_M1', state: 'consuming', inMeta: false }
+    ],
+    status: 'SEG_M registered in metadata. Gate opens. SEG_M1 consumes with correct merge state.',
+    outcome: 'ok'
+  }
+];
+
+// 2. State
+let mode = 'latch';
+let currentStep = 0;
+
+// 3. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+const modeSpan = document.getElementById('mode-span');
+
+// Layout
+const GUARD_X = 40;
+const GUARD_W = 160;
+const SEG_X = 240;
+const SEG_W = 440;
+const BOX_Y = 40;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function segColor(state) {
+  if (state === 'loaded') return ACCENT;
+  if (state === 'consuming') return ACCENT;
+  if (state === 'transitioning') return '#e6a64a';
+  if (state === 'stuck') return '#e6a64a';
+  if (state === 'blocked') return '#4a9ee6';
+  if (state === 'bad-data') return '#e64a4a';
+  return '#333';
+}
+
+function segFill(state) {
+  if (state === 'loaded') return ACCENT_FILL;
+  if (state === 'consuming') return ACCENT_FILL;
+  if (state === 'transitioning') return '#1a150a';
+  if (state === 'stuck') return '#1a150a';
+  if (state === 'blocked') return '#0a1020';
+  if (state === 'bad-data') return '#1a0a0a';
+  return 'none';
+}
+
+function segLabel(state) {
+  if (state === 'loaded') return '\u2713 in metadata';
+  if (state === 'consuming') return '\u25B6 consuming';
+  if (state === 'transitioning') return '\u2192 transitioning';
+  if (state === 'stuck') return '\u23F8 stuck in queue';
+  if (state === 'blocked') return '\u25A0 blocked by gate';
+  if (state === 'bad-data') return '\u2717 bad data';
+  return '';
+}
+
+// 4. Render
+function render() {
+  content.innerHTML = '';
+  const steps = mode === 'latch' ? LATCH_STEPS : GATE_STEPS;
+  const step = steps[currentStep];
+
+  // Step title
+  addText(content, 360, 20, `STEP ${currentStep}: ${step.title.toUpperCase()}`, {
+    fill: step.outcome === 'error' ? '#e64a4a' : (step.outcome === 'ok' ? ACCENT : '#888'),
+    size: '9', anchor: 'middle'
+  });
+
+  // ── Guard panel ──
+  addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 10, 'GUARD', { fill: '#666', size: '9', anchor: 'middle' });
+
+  if (mode === 'latch') {
+    const isOpen = step.latchState === 'open';
+    const latchColor = isOpen ? (step.outcome === 'error' ? '#e64a4a' : '#e6a64a') : ACCENT;
+    const latchFill = isOpen ? (step.outcome === 'error' ? '#1a0a0a' : '#1a150a') : ACCENT_FILL;
+
+    content.appendChild(makeSvgEl('rect', {
+      x: GUARD_X, y: BOX_Y + 18, width: GUARD_W, height: 260, rx: 3,
+      fill: latchFill, stroke: latchColor, 'stroke-width': 1.5
+    }));
+
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 44, 'ONE-SHOT LATCH', {
+      fill: latchColor, size: '10', anchor: 'middle'
+    });
+
+    // Latch state indicator
+    const latchY = BOX_Y + 65;
+    content.appendChild(makeSvgEl('rect', {
+      x: GUARD_X + 20, y: latchY, width: GUARD_W - 40, height: 30, rx: 2,
+      fill: isOpen ? '#1a150a' : ACCENT_FILL, stroke: isOpen ? '#e6a64a' : ACCENT, 'stroke-width': 1
+    }));
+    addText(content, GUARD_X + GUARD_W / 2, latchY + 20, isOpen ? 'OPEN' : 'CLOSED', {
+      fill: isOpen ? '#e6a64a' : ACCENT, size: '12', anchor: 'middle'
+    });
+
+    // One-way arrow
+    if (isOpen) {
+      addText(content, GUARD_X + GUARD_W / 2, latchY + 50, 'permanently open', {
+        fill: '#555', size: '8', anchor: 'middle'
+      });
+      addText(content, GUARD_X + GUARD_W / 2, latchY + 64, 'fired at boot', {
+        fill: '#444', size: '8', anchor: 'middle'
+      });
+      addText(content, GUARD_X + GUARD_W / 2, latchY + 78, 'never re-checks', {
+        fill: '#444', size: '8', anchor: 'middle'
+      });
+    } else {
+      addText(content, GUARD_X + GUARD_W / 2, latchY + 50, 'blocks ALL', {
+        fill: '#555', size: '8', anchor: 'middle'
+      });
+      addText(content, GUARD_X + GUARD_W / 2, latchY + 64, 'consumption', {
+        fill: '#555', size: '8', anchor: 'middle'
+      });
+    }
+
+    // Scope label
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 240, 'scope: GLOBAL', {
+      fill: '#555', size: '8', anchor: 'middle'
+    });
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 254, 'fires: ONCE', {
+      fill: '#555', size: '8', anchor: 'middle'
+    });
+  } else {
+    // Per-segment gate mode
+    content.appendChild(makeSvgEl('rect', {
+      x: GUARD_X, y: BOX_Y + 18, width: GUARD_W, height: 260, rx: 3,
+      fill: ACCENT_FILL_DARK, stroke: ACCENT_DIM, 'stroke-width': 1.5
+    }));
+
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 44, 'PER-SEGMENT GATE', {
+      fill: ACCENT, size: '10', anchor: 'middle'
+    });
+
+    // Draw individual gates
+    const gates = step.gates || {};
+    const gateNames = Object.keys(gates);
+    const gateH = 28;
+    const gateGap = 6;
+    const gateStartY = BOX_Y + 60;
+
+    for (let i = 0; i < gateNames.length; i++) {
+      const gy = gateStartY + i * (gateH + gateGap);
+      const name = gateNames[i];
+      const isOpen = gates[name] === 'open';
+
+      content.appendChild(makeSvgEl('rect', {
+        x: GUARD_X + 10, y: gy, width: GUARD_W - 20, height: gateH, rx: 2,
+        fill: isOpen ? ACCENT_FILL_DARK : '#0a1020',
+        stroke: isOpen ? ACCENT_DIM : '#4a9ee6', 'stroke-width': 1
+      }));
+
+      addText(content, GUARD_X + 18, gy + 12, name, {
+        fill: isOpen ? ACCENT_MID : '#4a9ee6', size: '8'
+      });
+      addText(content, GUARD_X + GUARD_W - 18, gy + 20, isOpen ? 'OPEN' : 'CLOSED', {
+        fill: isOpen ? ACCENT_SOFT : '#4a9ee6', size: '8', anchor: 'end'
+      });
+    }
+
+    if (gateNames.length === 0) {
+      addText(content, GUARD_X + GUARD_W / 2, gateStartY + 20, 'no gates yet', {
+        fill: '#333', size: '9', anchor: 'middle'
+      });
+    }
+
+    // Scope label
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 240, 'scope: PER-PARTITION', {
+      fill: '#555', size: '8', anchor: 'middle'
+    });
+    addText(content, GUARD_X + GUARD_W / 2, BOX_Y + 254, 'fires: PER-TRANSITION', {
+      fill: '#555', size: '8', anchor: 'middle'
+    });
+  }
+
+  // ── Segments panel ──
+  addText(content, SEG_X + SEG_W / 2, BOX_Y + 10, 'SEGMENTS', { fill: '#666', size: '9', anchor: 'middle' });
+
+  content.appendChild(makeSvgEl('rect', {
+    x: SEG_X, y: BOX_Y + 18, width: SEG_W, height: 260, rx: 3,
+    fill: 'none', stroke: '#222', 'stroke-width': 1
+  }));
+
+  const segs = step.segments;
+  const segH = 44;
+  const segGap = 8;
+  const segStartY = BOX_Y + 34;
+
+  for (let i = 0; i < segs.length; i++) {
+    const sy = segStartY + i * (segH + segGap);
+    const seg = segs[i];
+    const sc = segColor(seg.state);
+    const sf = segFill(seg.state);
+
+    content.appendChild(makeSvgEl('rect', {
+      x: SEG_X + 16, y: sy, width: SEG_W - 32, height: segH, rx: 2,
+      fill: sf, stroke: sc, 'stroke-width': 1.5
+    }));
+
+    addText(content, SEG_X + 28, sy + 18, seg.name, { fill: sc, size: '11' });
+    addText(content, SEG_X + 28, sy + 34, segLabel(seg.state), { fill: '#888', size: '9' });
+
+    // Metadata badge
+    if (seg.inMeta) {
+      const badgeX = SEG_X + SEG_W - 56;
+      content.appendChild(makeSvgEl('rect', {
+        x: badgeX, y: sy + 8, width: 24, height: 14, rx: 2,
+        fill: ACCENT_FILL_DARK, stroke: ACCENT_DIM, 'stroke-width': 1
+      }));
+      addText(content, badgeX + 12, sy + 19, 'M', { fill: ACCENT_MID, size: '8', anchor: 'middle' });
+    } else if (seg.state === 'bad-data') {
+      const badgeX = SEG_X + SEG_W - 100;
+      addText(content, badgeX, sy + 19, 'Long.MIN_VALUE', { fill: '#e64a4a', size: '8' });
+    }
+
+    // Arrow from guard to segment
+    if (i === segs.length - 1) {
+      const arrowY = sy + segH / 2;
+      content.appendChild(makeSvgEl('line', {
+        x1: GUARD_X + GUARD_W, y1: arrowY, x2: SEG_X + 12, y2: arrowY,
+        stroke: seg.state === 'blocked' ? '#4a9ee6' : (seg.state === 'bad-data' ? '#e64a4a' : '#333'),
+        'stroke-width': 1, 'stroke-dasharray': seg.state === 'blocked' ? '4,3' : 'none'
+      }));
+      const ax = SEG_X + 12;
+      content.appendChild(makeSvgEl('polygon', {
+        points: `${ax - 5},${arrowY - 3} ${ax},${arrowY} ${ax - 5},${arrowY + 3}`,
+        fill: seg.state === 'blocked' ? '#4a9ee6' : (seg.state === 'bad-data' ? '#e64a4a' : '#444')
+      }));
+      if (seg.state === 'blocked') {
+        addText(content, (GUARD_X + GUARD_W + SEG_X) / 2, arrowY - 8, 'BLOCKED', {
+          fill: '#4a9ee6', size: '8', anchor: 'middle'
+        });
+      }
+    }
+  }
+
+  if (segs.length === 0) {
+    addText(content, SEG_X + SEG_W / 2, segStartY + 40, 'no segments loaded yet', {
+      fill: '#333', size: '10', anchor: 'middle'
+    });
+  }
+
+  // Status
+  statusText.textContent = step.status;
+  statusText.setAttribute('fill',
+    step.outcome === 'error' ? '#e64a4a' :
+    step.outcome === 'ok' ? '#888' : '#e6a64a'
+  );
+}
+
+// 5. Event handlers
+function setMode(m) {
+  mode = m;
+  currentStep = 0;
+  document.getElementById('btn-latch').classList.toggle('active', m === 'latch');
+  document.getElementById('btn-gate').classList.toggle('active', m === 'gate');
+  modeSpan.textContent = m === 'latch' ? 'one-shot latch' : 'per-segment gate';
+  render();
+}
+
+document.getElementById('btn-latch').addEventListener('click', () => setMode('latch'));
+document.getElementById('btn-gate').addEventListener('click', () => setMode('gate'));
+
+document.getElementById('btn-next').addEventListener('click', () => {
+  const steps = mode === 'latch' ? LATCH_STEPS : GATE_STEPS;
+  if (currentStep < steps.length - 1) { currentStep++; render(); }
+});
+
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (currentStep > 0) { currentStep--; render(); }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0;
+  render();
+});
+
+// 6. Init
+render();
+</script>
+</body>
+</html>

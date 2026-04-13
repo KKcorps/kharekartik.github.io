@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Replica Divergence</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px; overflow: hidden;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .legend {
+    display: flex; gap: 16px; font-size: 11px; color: #666; margin-top: 14px; flex-wrap: wrap;
+  }
+  .legend-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// replica divergence check</div>
+  <div class="widget-subtitle">click each server to query its raw state — find the one that disagrees</div>
+
+  <svg id="main-svg" viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="330" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="355" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">click a server to run skipUpsert=true query</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-query-all">query all servers</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="legend">
+    <div><span class="legend-dot" id="dot-healthy"></span> consistent</div>
+    <div><span class="legend-dot" style="background:#e64a4a"></span> divergent</div>
+    <div><span class="legend-dot" style="background:#333"></span> not queried</div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+document.getElementById('dot-healthy').style.background = ACCENT;
+
+// 1. Data
+const SERVERS = [
+  {
+    name: 'SERVER 0',
+    segments: [
+      { seg: 'SEG_P', recordTs: '1770576109677', mergedTs: '1772011594948' },
+      { seg: 'SEG_M1', recordTs: '1770576109677', mergedTs: '1772011594201' },
+      { seg: 'SEG_M1', recordTs: '1770572866073', mergedTs: '1770572866280' },
+      { seg: 'SEG_M',  recordTs: '1770571942967', mergedTs: '1770571943180' }
+    ],
+    healthy: true
+  },
+  {
+    name: 'SERVER 1',
+    segments: [
+      { seg: 'SEG_P', recordTs: '1770576109677', mergedTs: '1772011594948' },
+      { seg: 'SEG_M1', recordTs: '1770576109677', mergedTs: '-9223372036854775808' },
+      { seg: 'SEG_M1', recordTs: '1770572866073', mergedTs: '-9223372036854775808' },
+      { seg: 'SEG_M',  recordTs: '1770571942967', mergedTs: '1770571943180' }
+    ],
+    healthy: false
+  },
+  {
+    name: 'SERVER 2',
+    segments: [
+      { seg: 'SEG_P', recordTs: '1770576109677', mergedTs: '1772011594948' },
+      { seg: 'SEG_M1', recordTs: '1770576109677', mergedTs: '1772011594201' },
+      { seg: 'SEG_M1', recordTs: '1770572866073', mergedTs: '1770572866280' },
+      { seg: 'SEG_M',  recordTs: '1770571942967', mergedTs: '1770571943180' }
+    ],
+    healthy: true
+  },
+  {
+    name: 'SERVER 3',
+    segments: [
+      { seg: 'SEG_P', recordTs: '1770576109677', mergedTs: '1772011594948' },
+      { seg: 'SEG_M1', recordTs: '1770576109677', mergedTs: '1772011594201' },
+      { seg: 'SEG_M1', recordTs: '1770572866073', mergedTs: '1770572866280' },
+      { seg: 'SEG_M',  recordTs: '1770571942967', mergedTs: '1770571943180' }
+    ],
+    healthy: true
+  }
+];
+
+// 2. State
+let queried = [false, false, false, false];
+
+// 3. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+
+// Layout
+const SERVER_W = 148;
+const SERVER_H = 52;
+const SERVER_GAP = 18;
+const SERVER_Y = 15;
+const TABLE_Y = 100;
+const ROW_H = 22;
+const COL_X = [50, 160, 340, 540];
+const COL_W = [100, 170, 190, 160];
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+// 4. Render
+function render() {
+  content.innerHTML = '';
+
+  const totalW = SERVERS.length * SERVER_W + (SERVERS.length - 1) * SERVER_GAP;
+  const startX = (720 - totalW) / 2;
+
+  // Server boxes
+  for (let i = 0; i < SERVERS.length; i++) {
+    const sx = startX + i * (SERVER_W + SERVER_GAP);
+    const s = SERVERS[i];
+    const q = queried[i];
+
+    let stroke = '#222';
+    let fill = 'none';
+    let textFill = '#666';
+
+    if (q) {
+      if (s.healthy) {
+        stroke = ACCENT;
+        fill = ACCENT_FILL;
+        textFill = ACCENT;
+      } else {
+        stroke = '#e64a4a';
+        fill = '#1a0a0a';
+        textFill = '#e64a4a';
+      }
+    }
+
+    const box = makeSvgEl('rect', {
+      x: sx, y: SERVER_Y, width: SERVER_W, height: SERVER_H, rx: 3,
+      fill, stroke, 'stroke-width': q ? 1.5 : 1, cursor: 'pointer'
+    });
+    box.addEventListener('click', () => { queried[i] = true; render(); updateStatus(); });
+    content.appendChild(box);
+
+    // Clickable overlay for better hit area
+    const overlay = makeSvgEl('rect', {
+      x: sx, y: SERVER_Y, width: SERVER_W, height: SERVER_H,
+      fill: 'transparent', cursor: 'pointer'
+    });
+    overlay.addEventListener('click', () => { queried[i] = true; render(); updateStatus(); });
+    content.appendChild(overlay);
+
+    addText(content, sx + SERVER_W / 2, SERVER_Y + 22, s.name, {
+      fill: textFill, size: '10', anchor: 'middle'
+    });
+
+    if (q) {
+      const label = s.healthy ? '\u2713 consistent' : '\u2717 divergent';
+      addText(content, sx + SERVER_W / 2, SERVER_Y + 40, label, {
+        fill: textFill, size: '9', anchor: 'middle'
+      });
+    } else {
+      addText(content, sx + SERVER_W / 2, SERVER_Y + 40, 'click to query', {
+        fill: '#444', size: '9', anchor: 'middle'
+      });
+    }
+  }
+
+  // Table header
+  const headerY = TABLE_Y;
+  content.appendChild(makeSvgEl('rect', {
+    x: 40, y: headerY, width: 640, height: ROW_H, rx: 0,
+    fill: '#111', stroke: '#222', 'stroke-width': 1
+  }));
+  addText(content, COL_X[0] + 4, headerY + 15, '$hostName', { fill: '#666', size: '9' });
+  addText(content, COL_X[1] + 4, headerY + 15, '$segmentName', { fill: '#666', size: '9' });
+  addText(content, COL_X[2] + 4, headerY + 15, 'recordTimestamp', { fill: '#666', size: '9' });
+  addText(content, COL_X[3] + 4, headerY + 15, 'mergedTimestamp', { fill: '#666', size: '9' });
+
+  // Collect rows from queried servers
+  const rows = [];
+  for (let i = 0; i < SERVERS.length; i++) {
+    if (!queried[i]) continue;
+    for (const seg of SERVERS[i].segments) {
+      rows.push({ server: SERVERS[i].name, ...seg, healthy: SERVERS[i].healthy });
+    }
+  }
+
+  // Table rows
+  for (let r = 0; r < rows.length; r++) {
+    const ry = headerY + ROW_H + r * ROW_H;
+    const row = rows[r];
+    const isBad = row.mergedTs === '-9223372036854775808';
+
+    content.appendChild(makeSvgEl('rect', {
+      x: 40, y: ry, width: 640, height: ROW_H, rx: 0,
+      fill: isBad ? '#1a0a0a' : 'none', stroke: '#1a1a1a', 'stroke-width': 1
+    }));
+
+    const hostColor = row.healthy ? '#888' : '#e64a4a';
+    addText(content, COL_X[0] + 4, ry + 15, row.server.toLowerCase(), {
+      fill: hostColor, size: '9'
+    });
+    addText(content, COL_X[1] + 4, ry + 15, row.seg, {
+      fill: isBad ? '#e64a4a' : '#888', size: '9'
+    });
+
+    // Truncate timestamps for display
+    const rtDisp = row.recordTs.length > 13 ? row.recordTs.slice(0, 13) : row.recordTs;
+    addText(content, COL_X[2] + 4, ry + 15, rtDisp, { fill: '#666', size: '9' });
+
+    if (isBad) {
+      addText(content, COL_X[3] + 4, ry + 15, 'Long.MIN_VALUE', {
+        fill: '#e64a4a', size: '9'
+      });
+      // Warning icon
+      addText(content, 680 - 4, ry + 15, '\u26A0', {
+        fill: '#e64a4a', size: '10', anchor: 'end'
+      });
+    } else {
+      const mtDisp = row.mergedTs.length > 13 ? row.mergedTs.slice(0, 13) : row.mergedTs;
+      addText(content, COL_X[3] + 4, ry + 15, mtDisp, { fill: '#666', size: '9' });
+    }
+  }
+
+  // Empty state
+  if (rows.length === 0) {
+    const emptyY = headerY + ROW_H + 40;
+    addText(content, 360, emptyY, 'SELECT $hostName, $segmentName, mergedTimestamp', {
+      fill: '#333', size: '10', anchor: 'middle'
+    });
+    addText(content, 360, emptyY + 18, 'FROM EVENTS_REALTIME WHERE primaryKey = \'<key>\'', {
+      fill: '#333', size: '10', anchor: 'middle'
+    });
+    addText(content, 360, emptyY + 44, 'click a server above to execute', {
+      fill: '#444', size: '9', anchor: 'middle'
+    });
+  }
+}
+
+function updateStatus() {
+  const numQueried = queried.filter(Boolean).length;
+  if (numQueried === 0) {
+    statusText.textContent = 'click a server to run skipUpsert=true query';
+    statusText.setAttribute('fill', '#888');
+  } else if (numQueried < 4) {
+    const divergent = SERVERS.some((s, i) => queried[i] && !s.healthy);
+    if (divergent) {
+      statusText.textContent = 'Server 1 has Long.MIN_VALUE — merge never ran. Query remaining servers to confirm.';
+      statusText.setAttribute('fill', '#e64a4a');
+    } else {
+      statusText.textContent = `${numQueried}/4 servers queried — all consistent so far`;
+      statusText.setAttribute('fill', '#888');
+    }
+  } else {
+    statusText.textContent = '3 servers agree, Server 1 diverges. Scope: one node, one key, one time window.';
+    statusText.setAttribute('fill', ACCENT);
+  }
+}
+
+// 5. Event handlers
+document.getElementById('btn-query-all').addEventListener('click', () => {
+  queried = [true, true, true, true];
+  render();
+  updateStatus();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  queried = [false, false, false, false];
+  render();
+  updateStatus();
+});
+
+// 6. Init
+render();
+</script>
+</body>
+</html>
