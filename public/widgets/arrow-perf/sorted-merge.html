@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorted Merge</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .legend {
+    display: flex; gap: 16px; font-size: 11px; color: #666; margin-top: 14px; flex-wrap: wrap;
+  }
+  .legend-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// sorted merge with bounded windows</div>
+  <div class="widget-subtitle">step through the heap-based merge to see window reloads in action</div>
+
+  <svg id="main-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="352" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="377" text-anchor="middle" fill="#888" font-size="12"
+          font-family="IBM Plex Mono" id="status-text">step through to merge three sorted files</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&larr; prev</button>
+    <button id="btn-next">next &rarr;</button>
+    <button id="btn-play">&#9654; play</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="legend">
+    <div><span class="legend-dot" id="dot-window"></span> loaded window</div>
+    <div><span class="legend-dot" style="background:#333"></span> not in memory</div>
+    <div><span class="legend-dot" id="dot-pointer"></span> current pointer</div>
+    <div><span class="legend-dot" style="background:#e6a64a"></span> window reload</div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+document.getElementById('dot-window').style.background = ACCENT_DIM;
+document.getElementById('dot-pointer').style.background = ACCENT;
+
+// 1. Data — fewer values, bigger cells
+const FILES = [
+  { name: 'FILE A', data: [2, 5, 8, 11] },
+  { name: 'FILE B', data: [1, 3, 7, 10] },
+  { name: 'FILE C', data: [4, 6, 9, 12] }
+];
+const WINDOW_SIZE = 2;
+const FILE_COLORS = [ACCENT, '#4a9ee6', '#e6a64a'];
+
+function precompute() {
+  const states = FILES.map(f => ({
+    ptr: 0, windowStart: 0,
+    windowEnd: Math.min(WINDOW_SIZE, f.data.length),
+    exhausted: false
+  }));
+  const output = [];
+  const steps = [{ states: JSON.parse(JSON.stringify(states)), output: [], msg: 'Initial state: windows loaded, heap seeded', reload: -1 }];
+
+  while (true) {
+    let minVal = Infinity, minF = -1;
+    for (let i = 0; i < FILES.length; i++) {
+      if (!states[i].exhausted && FILES[i].data[states[i].ptr] < minVal) {
+        minVal = FILES[i].data[states[i].ptr]; minF = i;
+      }
+    }
+    if (minF === -1) break;
+
+    output.push({ value: minVal, file: minF });
+    states[minF].ptr++;
+
+    let reload = -1, msg = '';
+    if (states[minF].ptr >= states[minF].windowEnd) {
+      if (states[minF].ptr >= FILES[minF].data.length) {
+        states[minF].exhausted = true;
+        msg = `Pop ${minVal} from ${FILES[minF].name}. File fully consumed.`;
+      } else {
+        states[minF].windowStart = states[minF].ptr;
+        states[minF].windowEnd = Math.min(states[minF].ptr + WINDOW_SIZE, FILES[minF].data.length);
+        reload = minF;
+        msg = `Pop ${minVal} from ${FILES[minF].name}. Window exhausted \u2192 reload next ${states[minF].windowEnd - states[minF].windowStart} rows`;
+      }
+    } else {
+      msg = `Pop ${minVal} from ${FILES[minF].name}. Advance pointer.`;
+    }
+    steps.push({ states: JSON.parse(JSON.stringify(states)), output: output.map(o => ({...o})), msg, reload });
+  }
+  steps.push({ states: JSON.parse(JSON.stringify(states)), output: output.map(o => ({...o})), msg: `Merge complete: ${output.length} rows in global sorted order`, reload: -1 });
+  return steps;
+}
+
+const STEPS = precompute();
+let currentStep = 0;
+let playing = false;
+let interval;
+
+// 2. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+
+// Layout — larger cells
+const CELL_W = 42;
+const CELL_H = 38;
+const CELL_GAP = 5;
+const FILE_W = 4 * CELL_W + 3 * CELL_GAP + 24; // ~211
+const FILE_GAP = (640 - FILE_W * 3) / 2;
+const FILE_START_X = 40;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '13',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'middle'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+// 3. Render
+function render() {
+  content.innerHTML = '';
+  const step = STEPS[currentStep];
+  const { states, output, reload } = step;
+
+  // File panels
+  for (let f = 0; f < FILES.length; f++) {
+    const fx = FILE_START_X + f * (FILE_W + FILE_GAP);
+    const fy = 6;
+    const file = FILES[f];
+    const st = states[f];
+    const color = FILE_COLORS[f];
+    const isReload = reload === f;
+
+    // Header
+    addText(content, fx + FILE_W / 2, fy + 16, file.name, {
+      fill: st.exhausted ? '#333' : color, size: '12'
+    });
+
+    // Box
+    content.appendChild(makeSvgEl('rect', {
+      x: fx, y: fy + 24, width: FILE_W, height: CELL_H + 30, rx: 3,
+      fill: 'none', stroke: isReload ? '#e6a64a' : (st.exhausted ? '#1a1a1a' : '#222'),
+      'stroke-width': isReload ? 1.5 : 1
+    }));
+
+    if (isReload) {
+      addText(content, fx + FILE_W / 2, fy + CELL_H + 68, 'RELOADED', { fill: '#e6a64a', size: '10' });
+    }
+
+    // Data cells
+    const cellStartX = fx + 12;
+    const cellY = fy + 34;
+
+    for (let i = 0; i < file.data.length; i++) {
+      const cx = cellStartX + i * (CELL_W + CELL_GAP);
+      const inWindow = i >= st.windowStart && i < st.windowEnd && !st.exhausted;
+      const isPtr = i === st.ptr && !st.exhausted;
+      const consumed = i < st.ptr;
+
+      let fillColor = 'none', strokeColor = '#222', strokeW = 1, textColor = '#333';
+      if (isPtr) {
+        fillColor = ACCENT_FILL; strokeColor = color; strokeW = 2; textColor = color;
+      } else if (consumed) {
+        fillColor = ACCENT_FILL_DARK; strokeColor = ACCENT_DIM; textColor = '#444';
+      } else if (inWindow) {
+        strokeColor = ACCENT_DIM; textColor = '#888';
+      }
+
+      content.appendChild(makeSvgEl('rect', {
+        x: cx, y: cellY, width: CELL_W, height: CELL_H, rx: 3,
+        fill: fillColor, stroke: strokeColor, 'stroke-width': strokeW
+      }));
+
+      addText(content, cx + CELL_W / 2, cellY + CELL_H / 2 + 5, String(file.data[i]), {
+        fill: textColor, size: '14'
+      });
+
+      if (consumed) {
+        content.appendChild(makeSvgEl('line', {
+          x1: cx + 4, y1: cellY + CELL_H / 2,
+          x2: cx + CELL_W - 4, y2: cellY + CELL_H / 2,
+          stroke: '#444', 'stroke-width': 1
+        }));
+      }
+    }
+
+    // Window bracket
+    if (!st.exhausted) {
+      const wStart = cellStartX + st.windowStart * (CELL_W + CELL_GAP) - 2;
+      const wEnd = cellStartX + (st.windowEnd - 1) * (CELL_W + CELL_GAP) + CELL_W + 2;
+      const bracketY = cellY + CELL_H + 5;
+      content.appendChild(makeSvgEl('line', {
+        x1: wStart, y1: bracketY, x2: wEnd, y2: bracketY,
+        stroke: ACCENT_DIM, 'stroke-width': 1
+      }));
+      addText(content, (wStart + wEnd) / 2, bracketY + 14, 'window', { fill: '#555', size: '10' });
+    } else {
+      addText(content, fx + FILE_W / 2, cellY + CELL_H + 16, 'exhausted', { fill: '#333', size: '10' });
+    }
+  }
+
+  // Heap section
+  const heapY = 140;
+  addText(content, 360, heapY, 'MIN-HEAP', { fill: '#666', size: '11' });
+
+  const heapVals = [];
+  for (let f = 0; f < FILES.length; f++) {
+    if (!states[f].exhausted) heapVals.push({ value: FILES[f].data[states[f].ptr], file: f });
+  }
+  heapVals.sort((a, b) => a.value - b.value);
+
+  const heapCellW = 70;
+  const heapCellH = 40;
+  const heapGap = 10;
+  const heapTotalW = heapVals.length * heapCellW + Math.max(0, heapVals.length - 1) * heapGap;
+  const heapStartX = 360 - heapTotalW / 2;
+  const heapCellY = heapY + 10;
+
+  for (let i = 0; i < heapVals.length; i++) {
+    const hx = heapStartX + i * (heapCellW + heapGap);
+    const isMin = i === 0;
+    const color = FILE_COLORS[heapVals[i].file];
+
+    content.appendChild(makeSvgEl('rect', {
+      x: hx, y: heapCellY, width: heapCellW, height: heapCellH, rx: 3,
+      fill: isMin ? ACCENT_FILL : 'none',
+      stroke: isMin ? ACCENT : '#222', 'stroke-width': isMin ? 2 : 1
+    }));
+
+    addText(content, hx + heapCellW / 2, heapCellY + heapCellH / 2 + 5, String(heapVals[i].value), {
+      fill: isMin ? ACCENT : '#666', size: '16'
+    });
+
+    // Color indicator
+    content.appendChild(makeSvgEl('rect', {
+      x: hx + 3, y: heapCellY + 3, width: 6, height: 6, rx: 2,
+      fill: color, stroke: 'none'
+    }));
+  }
+
+  if (heapVals.length === 0 && currentStep > 0) {
+    addText(content, 360, heapCellY + 22, 'empty', { fill: '#333', size: '13' });
+  }
+
+  // Arrow to output
+  content.appendChild(makeSvgEl('line', {
+    x1: 360, y1: heapCellY + heapCellH + 8, x2: 360, y2: heapCellY + heapCellH + 24,
+    stroke: '#333', 'stroke-width': 1
+  }));
+  content.appendChild(makeSvgEl('polygon', {
+    points: `357,${heapCellY + heapCellH + 22} 360,${heapCellY + heapCellH + 28} 363,${heapCellY + heapCellH + 22}`,
+    fill: '#444'
+  }));
+
+  // Output stream
+  const outY = 230;
+  addText(content, 360, outY, 'OUTPUT', { fill: '#666', size: '11' });
+
+  const outCellW = 42;
+  const outCellH = 36;
+  const outGap = 4;
+  const maxVisible = 12;
+  const visibleOutput = output.slice(-maxVisible);
+  const outTotalW = Math.min(output.length, maxVisible) * (outCellW + outGap) - (output.length > 0 ? outGap : 0);
+  const outStartX = 360 - outTotalW / 2;
+  const outCellY = outY + 10;
+
+  content.appendChild(makeSvgEl('rect', {
+    x: 40, y: outCellY - 3, width: 640, height: outCellH + 6, rx: 2,
+    fill: 'none', stroke: '#1a1a1a', 'stroke-width': 1
+  }));
+
+  for (let i = 0; i < visibleOutput.length; i++) {
+    const ox = outStartX + i * (outCellW + outGap);
+    const isLast = (i === visibleOutput.length - 1) && currentStep > 0;
+    const color = FILE_COLORS[visibleOutput[i].file];
+
+    content.appendChild(makeSvgEl('rect', {
+      x: ox, y: outCellY, width: outCellW, height: outCellH, rx: 3,
+      fill: isLast ? ACCENT_FILL : ACCENT_FILL_DARK,
+      stroke: isLast ? ACCENT : ACCENT_DIM, 'stroke-width': isLast ? 2 : 1
+    }));
+
+    addText(content, ox + outCellW / 2, outCellY + outCellH / 2 + 5, String(visibleOutput[i].value), {
+      fill: isLast ? ACCENT : ACCENT_MID, size: '13'
+    });
+
+    content.appendChild(makeSvgEl('circle', {
+      cx: ox + outCellW / 2, cy: outCellY - 5, r: 3, fill: color, stroke: 'none'
+    }));
+  }
+
+  addText(content, 680, outCellY + outCellH / 2 + 5, `${output.length}/${FILES.reduce((s, f) => s + f.data.length, 0)}`, {
+    fill: '#555', size: '11', anchor: 'end'
+  });
+
+  // Step counter
+  addText(content, 680, 340, `step ${currentStep}/${STEPS.length - 1}`, { fill: '#444', size: '10', anchor: 'end' });
+
+  // Status
+  statusText.textContent = step.msg;
+  statusText.setAttribute('fill', reload >= 0 ? '#e6a64a' : '#888');
+}
+
+// 4. Events
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+});
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (currentStep > 0) { currentStep--; render(); }
+});
+document.getElementById('btn-play').addEventListener('click', function () {
+  playing = !playing;
+  this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+      else {
+        clearInterval(interval); playing = false;
+        document.getElementById('btn-play').textContent = '\u25B6 play';
+        document.getElementById('btn-play').classList.remove('active');
+      }
+    }, 900);
+  } else { clearInterval(interval); }
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0; playing = false; clearInterval(interval);
+  document.getElementById('btn-play').textContent = '\u25B6 play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+});
+
+// 5. Init
+render();
+</script>
+</body>
+</html>

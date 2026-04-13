@@ -630,3 +630,68 @@ Before delivering a widget, verify:
 - [ ] No console errors
 - [ ] `render()` is idempotent and state-driven
 - [ ] Iframe embed height is tight (no excessive whitespace or scrollbars)
+
+---
+
+## 11. Common failure modes
+
+Mistakes that have caused real bugs in past widgets. Check for these proactively.
+
+### Mode toggles with variable-height content shift controls
+
+When a widget has mode buttons (e.g. IntVector / VarCharVector / ListVector) and each mode renders
+different amounts of SVG content, the viewBox height changes per mode. This pushes the controls and
+legend up or down every time the user clicks a button — terrible UX.
+
+**Fix:** Use a **fixed viewBox height** across all modes. Pick the tallest mode's requirement and
+use that for every mode. Empty space at the bottom of shorter modes is invisible on a dark
+background and far preferable to jumping controls.
+
+```javascript
+// Bad — controls shift on every mode switch
+if (mode === 'int') svg.setAttribute('viewBox', '0 0 720 260');
+else if (mode === 'varchar') svg.setAttribute('viewBox', '0 0 720 360');
+
+// Good — fixed height, controls stay put
+svg.setAttribute('viewBox', '0 0 720 360');
+```
+
+### Iframe height too short clips controls and legend
+
+The iframe `height` in the blog markdown must account for: body padding (48px) + title (~21px) +
+subtitle (~36px) + SVG (viewBox height scaled to width) + controls (~52px) + legend (~34px).
+A viewBox of 360 in a 720-max container typically needs **560px** iframe height. When in doubt,
+open the widget in a browser at the iframe width and check for scrollbars or clipped buttons.
+
+### Null entries in packed buffers create phantom gaps
+
+For variable-width types (VarChar, List), a null value has a zero-length offset range (e.g.
+offsets [8, 8]). The packed data buffer should contain **no characters** for that entry. A common
+bug is inserting spaces or placeholder chars for null slots, which misaligns all subsequent bracket
+annotations and offset labels.
+
+```javascript
+// Bad — inserts spaces for null
+dataChars: 'abchello  gorust'   // 16 chars, offsets don't match
+
+// Good — null has zero length, offsets [8,8] means no chars
+dataChars: 'abchellogorust'     // 14 chars, brackets align correctly
+```
+
+### Adding a third mode to an if/else creates a syntax error
+
+When extending a two-mode widget (if/else) to three modes, the second branch must change from
+`else {` to `else if (mode === 'second') {` before adding `else if (mode === 'third') {`.
+Otherwise you get `Unexpected token 'else'`.
+
+```javascript
+// Bad — "else" already consumed the branch
+if (mode === 'int') { ... }
+else { /* varchar */ ... }
+else if (mode === 'list') { ... }  // SyntaxError
+
+// Good — explicit conditions for each mode
+if (mode === 'int') { ... }
+else if (mode === 'varchar') { ... }
+else if (mode === 'list') { ... }
+```

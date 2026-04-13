@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Vector Cache</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// field vector cache staleness</div>
+  <div class="widget-subtitle">step through to see how a stale cache silently reads wrong data</div>
+
+  <svg id="main-svg" viewBox="0 0 720 370" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="322" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="347" text-anchor="middle" fill="#888" font-size="12"
+          font-family="IBM Plex Mono" id="status-text">step through 5 stages to see the cache bug</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&larr; prev</button>
+    <button id="btn-next">next &rarr;</button>
+    <button id="btn-play">&#9654; play</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>step: <span id="stat-step">0</span> / 5</div>
+    <div>correctness: <span id="stat-correct">--</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. Steps
+const BATCHES = {
+  1: { label: 'BATCH 1', rows: ['10, "abc"', '20, "def"'] },
+  2: { label: 'BATCH 2', rows: ['40, "xyz"', '50, "uvw"'] }
+};
+
+const STEPS = [
+  { id: 0, title: 'Initial state', rootBatch: null, cacheTarget: null, readResult: null,
+    status: 'No batches loaded yet. Cache is empty.', state: 'neutral' },
+  { id: 1, title: 'Load Batch 1, populate cache', rootBatch: 1, cacheTarget: 1, readResult: null,
+    status: 'Root created from disk. Cache stores field vector references. Cache is fresh.', state: 'ok' },
+  { id: 2, title: 'Read rows via cache', rootBatch: 1, cacheTarget: 1,
+    readResult: { values: ['10, "abc"', '20, "def"'], correct: true },
+    status: 'Cache points to Batch 1 vectors. Reads return correct Batch 1 data.', state: 'ok' },
+  { id: 3, title: 'Load Batch 2, cache NOT updated', rootBatch: 2, cacheTarget: 1, readResult: null,
+    status: 'New root loaded from disk but cache still holds Batch 1 references. STALE!', state: 'warn' },
+  { id: 4, title: 'Read rows via stale cache', rootBatch: 2, cacheTarget: 1,
+    readResult: { values: ['10, "abc"', '20, "def"'], correct: false, expected: ['40, "xyz"', '50, "uvw"'] },
+    status: 'Cache reads from Batch 1 vectors. Returns WRONG DATA. Expected Batch 2.', state: 'error' },
+  { id: 5, title: 'Fix: invalidate cache on batch load', rootBatch: 2, cacheTarget: 2,
+    readResult: { values: ['40, "xyz"', '50, "uvw"'], correct: true },
+    status: 'Cache updated on batch reload. Reads now return correct Batch 2 data.', state: 'ok' }
+];
+
+// 2. State
+let currentStep = 0;
+let playing = false;
+let interval;
+
+// 3. DOM refs
+const content = document.getElementById('content');
+const statusText = document.getElementById('status-text');
+const statStep = document.getElementById('stat-step');
+const statCorrect = document.getElementById('stat-correct');
+
+// Layout — three wider panels
+const BOX_W = 195;
+const BOX_H = 180;
+const BOX_Y = 60;
+const ROOT_X = 30;
+const CACHE_X = 263;
+const RESULT_X = 495;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function addText(parent, x, y, label, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '12',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'middle'
+  });
+  el.textContent = label;
+  parent.appendChild(el);
+  return el;
+}
+
+function stateColor(state) {
+  if (state === 'ok') return ACCENT;
+  if (state === 'warn') return '#e6a64a';
+  if (state === 'error') return '#e64a4a';
+  return '#333';
+}
+
+function stateFill(state) {
+  if (state === 'ok') return ACCENT_FILL;
+  if (state === 'warn') return '#1a150a';
+  if (state === 'error') return '#1a0a0a';
+  return 'none';
+}
+
+// 4. Render
+function render() {
+  content.innerHTML = '';
+  const step = STEPS[currentStep];
+  const sc = stateColor(step.state);
+  const sf = stateFill(step.state);
+
+  // Step indicator dots
+  for (let i = 0; i <= 5; i++) {
+    const dx = 235 + i * 50;
+    const active = i === currentStep;
+    const past = i < currentStep;
+    content.appendChild(makeSvgEl('circle', {
+      cx: dx, cy: 18, r: active ? 8 : 5,
+      fill: active ? sc : (past ? ACCENT_DIM : 'none'),
+      stroke: active ? sc : (past ? ACCENT_DIM : '#333'),
+      'stroke-width': active ? 2 : 1
+    }));
+    addText(content, dx, 36, String(i), { fill: active ? sc : '#555', size: '10' });
+    if (i < 5) {
+      content.appendChild(makeSvgEl('line', {
+        x1: dx + 10, y1: 18, x2: dx + 40, y2: 18,
+        stroke: past ? ACCENT_DIM : '#222', 'stroke-width': 1
+      }));
+    }
+  }
+
+  // Step title
+  addText(content, 360, BOX_Y - 6, step.title.toUpperCase(), { fill: sc, size: '11' });
+
+  // ── ROOT PANEL ──
+  const rootColor = step.rootBatch ? sc : '#333';
+  content.appendChild(makeSvgEl('rect', {
+    x: ROOT_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
+    fill: step.rootBatch ? sf : 'none',
+    stroke: rootColor, 'stroke-width': step.rootBatch ? 1.5 : 1
+  }));
+  addText(content, ROOT_X + BOX_W / 2, BOX_Y + 20, 'VECTORSCHEMAROOT', { fill: '#666', size: '10' });
+
+  if (step.rootBatch) {
+    const batch = BATCHES[step.rootBatch];
+    addText(content, ROOT_X + BOX_W / 2, BOX_Y + 46, batch.label, { fill: rootColor, size: '14' });
+
+    // Row data
+    for (let i = 0; i < batch.rows.length; i++) {
+      const ry = BOX_Y + 64 + i * 44;
+      content.appendChild(makeSvgEl('rect', {
+        x: ROOT_X + 14, y: ry, width: BOX_W - 28, height: 34, rx: 3,
+        fill: 'none', stroke: ACCENT_DIM, 'stroke-width': 1
+      }));
+      addText(content, ROOT_X + BOX_W / 2, ry + 22, batch.rows[i], { fill: '#888', size: '12' });
+      addText(content, ROOT_X + 20, ry + 12, `row ${i}`, { fill: '#444', size: '9', anchor: 'start' });
+    }
+  } else {
+    addText(content, ROOT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '13' });
+  }
+
+  // ── CACHE PANEL ──
+  const cacheStale = step.cacheTarget && step.rootBatch && step.cacheTarget !== step.rootBatch;
+  const cacheColor = cacheStale ? '#e6a64a' : (step.cacheTarget ? sc : '#333');
+  const cacheFill = cacheStale ? '#1a150a' : (step.cacheTarget ? sf : 'none');
+
+  content.appendChild(makeSvgEl('rect', {
+    x: CACHE_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
+    fill: cacheFill, stroke: cacheColor, 'stroke-width': step.cacheTarget ? 1.5 : 1
+  }));
+  addText(content, CACHE_X + BOX_W / 2, BOX_Y + 20, 'CACHED VECTORS', { fill: '#666', size: '10' });
+
+  if (step.cacheTarget) {
+    const targetBatch = BATCHES[step.cacheTarget];
+    addText(content, CACHE_X + BOX_W / 2, BOX_Y + 50, `\u2192 ${targetBatch.label} refs`, {
+      fill: cacheStale ? '#e6a64a' : cacheColor, size: '13'
+    });
+
+    if (cacheStale) {
+      addText(content, CACHE_X + BOX_W / 2, BOX_Y + 74, 'STALE!', { fill: '#e6a64a', size: '14' });
+    }
+
+    const entryY = cacheStale ? BOX_Y + 92 : BOX_Y + 72;
+    for (let i = 0; i < 2; i++) {
+      const ey = entryY + i * 38;
+      content.appendChild(makeSvgEl('rect', {
+        x: CACHE_X + 14, y: ey, width: BOX_W - 28, height: 30, rx: 3,
+        fill: 'none', stroke: cacheStale ? '#e6a64a' : ACCENT_DIM,
+        'stroke-width': 1, 'stroke-dasharray': cacheStale ? '4,3' : 'none'
+      }));
+      addText(content, CACHE_X + BOX_W / 2, ey + 20,
+        `fv[${i}] \u2192 Batch ${step.cacheTarget}`,
+        { fill: cacheStale ? '#e6a64a' : ACCENT_MID, size: '11' }
+      );
+    }
+  } else {
+    addText(content, CACHE_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '13' });
+  }
+
+  // ── RESULT PANEL ──
+  const hasResult = step.readResult !== null;
+  const resultCorrect = hasResult && step.readResult.correct;
+  const resultColor = !hasResult ? '#333' : (resultCorrect ? ACCENT : '#e64a4a');
+  const resultFill = !hasResult ? 'none' : (resultCorrect ? ACCENT_FILL : '#1a0a0a');
+
+  content.appendChild(makeSvgEl('rect', {
+    x: RESULT_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
+    fill: resultFill, stroke: resultColor, 'stroke-width': hasResult ? 1.5 : 1
+  }));
+  addText(content, RESULT_X + BOX_W / 2, BOX_Y + 20, 'READ RESULT', { fill: '#666', size: '10' });
+
+  if (hasResult) {
+    const r = step.readResult;
+    addText(content, RESULT_X + BOX_W / 2, BOX_Y + 48,
+      r.correct ? 'CORRECT' : 'WRONG DATA', { fill: resultColor, size: '14' }
+    );
+
+    for (let i = 0; i < r.values.length; i++) {
+      const ry = BOX_Y + 64 + i * 44;
+      content.appendChild(makeSvgEl('rect', {
+        x: RESULT_X + 14, y: ry, width: BOX_W - 28, height: 34, rx: 3,
+        fill: 'none', stroke: r.correct ? ACCENT_DIM : '#e64a4a',
+        'stroke-width': 1, 'stroke-dasharray': r.correct ? 'none' : '4,3'
+      }));
+      addText(content, RESULT_X + BOX_W / 2, ry + 22, r.values[i], {
+        fill: r.correct ? '#888' : '#e64a4a', size: '12'
+      });
+    }
+
+    if (!r.correct && r.expected) {
+      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 22, 'expected:', { fill: '#666', size: '10' });
+      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 6, r.expected[0], { fill: ACCENT_SOFT, size: '11' });
+    }
+  } else {
+    addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'no read yet', { fill: '#333', size: '13' });
+  }
+
+  // ── ARROWS ──
+  const arrowY = BOX_Y + BOX_H / 2;
+
+  if (step.cacheTarget) {
+    const arrowColor = cacheStale ? '#e6a64a' : (step.state === 'ok' ? ACCENT_DIM : '#333');
+    content.appendChild(makeSvgEl('line', {
+      x1: ROOT_X + BOX_W + 4, y1: arrowY, x2: CACHE_X - 4, y2: arrowY,
+      stroke: arrowColor, 'stroke-width': 1.5,
+      'stroke-dasharray': cacheStale ? '5,4' : 'none'
+    }));
+    if (cacheStale) {
+      addText(content, (ROOT_X + BOX_W + CACHE_X) / 2, arrowY - 10, '\u2717', { fill: '#e6a64a', size: '16' });
+    }
+  }
+
+  if (hasResult) {
+    const arrowColor = resultCorrect ? ACCENT_DIM : '#e64a4a';
+    content.appendChild(makeSvgEl('line', {
+      x1: CACHE_X + BOX_W + 4, y1: arrowY, x2: RESULT_X - 8, y2: arrowY,
+      stroke: arrowColor, 'stroke-width': 1.5,
+      'stroke-dasharray': resultCorrect ? 'none' : '5,4'
+    }));
+    const ax = RESULT_X - 8;
+    content.appendChild(makeSvgEl('polygon', {
+      points: `${ax - 7},${arrowY - 4} ${ax},${arrowY} ${ax - 7},${arrowY + 4}`,
+      fill: arrowColor
+    }));
+  }
+
+  // Code hint
+  const codeY = BOX_Y + BOX_H + 20;
+  if (currentStep === 5) {
+    addText(content, 360, codeY, 'if (loadedBatchChanged) { cache = root.getFieldVectors(); }', {
+      fill: ACCENT_SOFT, size: '11'
+    });
+  } else if (currentStep === 3 || currentStep === 4) {
+    addText(content, 360, codeY, '// cache NOT invalidated on batch reload', {
+      fill: '#e6a64a', size: '11'
+    });
+  }
+
+  // Stats
+  statStep.textContent = currentStep;
+  if (step.state === 'ok') {
+    statCorrect.textContent = 'valid'; statCorrect.style.color = ''; statCorrect.className = '';
+  } else if (step.state === 'error') {
+    statCorrect.textContent = 'WRONG'; statCorrect.style.color = '#e64a4a'; statCorrect.className = 'del';
+  } else if (step.state === 'warn') {
+    statCorrect.textContent = 'stale'; statCorrect.style.color = '#e6a64a'; statCorrect.className = '';
+  } else {
+    statCorrect.textContent = '--'; statCorrect.style.color = ''; statCorrect.className = '';
+  }
+
+  statusText.textContent = step.status;
+  statusText.setAttribute('fill', step.state === 'error' ? '#e64a4a' : (step.state === 'warn' ? '#e6a64a' : '#888'));
+}
+
+// 5. Events
+document.getElementById('btn-next').addEventListener('click', () => {
+  if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+});
+document.getElementById('btn-prev').addEventListener('click', () => {
+  if (currentStep > 0) { currentStep--; render(); }
+});
+document.getElementById('btn-play').addEventListener('click', function () {
+  playing = !playing;
+  this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
+  this.classList.toggle('active', playing);
+  if (playing) {
+    interval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) { currentStep++; render(); }
+      else {
+        clearInterval(interval); playing = false;
+        document.getElementById('btn-play').textContent = '\u25B6 play';
+        document.getElementById('btn-play').classList.remove('active');
+      }
+    }, 1200);
+  } else { clearInterval(interval); }
+});
+document.getElementById('btn-reset').addEventListener('click', () => {
+  currentStep = 0; playing = false; clearInterval(interval);
+  document.getElementById('btn-play').textContent = '\u25B6 play';
+  document.getElementById('btn-play').classList.remove('active');
+  render();
+});
+
+// 6. Init
+render();
+</script>
+</body>
+</html>

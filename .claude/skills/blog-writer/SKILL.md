@@ -71,10 +71,62 @@ This is non-negotiable. Every draft must match this voice. Read the style memory
 before drafting, but here's the enforced ruleset:
 
 ### Voice
-- First person, conversational, direct
-- "I built this because...", "The first thing that broke was...", "That hypothesis was right in principle and wrong in every implementation detail."
+- First person, conversational, storytelling. Write like you're telling a colleague what happened over coffee.
+- Setups should read like personal narratives: "So in 2024, I was building..." not clinical summaries of what the system does.
 - Raw language is fine: fuck, mess, broke, prayer-based testing. Don't sanitize.
 - Dry humor. Not jokes — just honest observations that happen to be funny.
+
+### Sentence rhythm (critical)
+- **No staccato fragments.** Never write short 2-3 word declarative sentences like "Clean premise.", "All true.", "This one was just wrong.", "Arrow's IPC writer is chatty." These are the #1 style violation.
+- **Sentences should flow.** Typical sentence length is 15-30 words. Connect ideas with "because", "which means", "so", "and", "but" rather than chopping them into separate short sentences.
+- **No broken/clipped sentence pairs.** Don't state a fact in one short sentence then explain it in the next. Merge them into one flowing thought.
+- **First-person framing over declarative statements.** Prefer "I discovered that X is expensive" over "X is expensive." Prefer "The thing I didn't expect is..." over "The problem is that..."
+
+### Before/after examples
+
+These are real corrections from past sessions. Study them.
+
+**Bad — clipped declarative opener:**
+> Arrow's IPC writer is chatty. A single `writeBatch()` call doesn't produce one contiguous write to disk.
+
+**Good — conversational discovery:**
+> I didn't realize how chatty Arrow's IPC writer actually is until I looked at what a single `writeBatch()` call does under the hood. It doesn't produce one contiguous write to disk.
+
+**Bad — two disconnected facts:**
+> Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra.
+
+**Good — one connected thought:**
+> I was building a custom map-reduce framework and I needed an intermediate format for shuffling data between mappers and reducers. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra.
+
+**Bad — impersonal second-person:**
+> If you approach it that way the code still compiles but your design instincts are just wrong.
+
+**Good — first-person experience:**
+> I started with row-by-row logic in the hot path because it felt natural and Arrow let me do it, but it quietly made me pay at scale.
+
+**Bad — short declarative + separate explanation:**
+> `VectorSchemaRoot.getFieldVectors()` is not free. Calling it every row in a tight read loop is measurable.
+
+**Good — connected discovery:**
+> I discovered that `VectorSchemaRoot.getFieldVectors()` is not free and calling it every row in a tight read loop adds up to measurable overhead.
+
+**Bad — staccato fragment pair:**
+> Everything above was about discipline. The read side introduced a different category of problem.
+
+**Good — flowing transition:**
+> Everything I described so far was about discipline on the write path. The read side introduced a completely different category of problem.
+
+**Bad — clinical setup:**
+> Even the basic map-reduce path was not simple. Getting Arrow to write efficiently, manage off-heap memory correctly...
+
+**Good — storytelling setup:**
+> The map-reduce path itself was already not simple. I needed Arrow to write efficiently, manage off-heap memory correctly... all of that had to work before I could even think about the next problem.
+
+**Bad — detached observation:**
+> `VectorSchemaRoot.slice()` looked appealing as a logical view. It is not a free view.
+
+**Good — personal narrative:**
+> I also tried `VectorSchemaRoot.slice()` thinking it would give me a cheap logical view over an already-loaded batch portion, but it turns out that under the hood it goes through `splitAndTransfer` which allocates new vectors.
 
 ### Structure
 - Clear `##` sections, `###` subsections
@@ -86,6 +138,7 @@ before drafting, but here's the enforced ruleset:
 ### What to avoid
 - No emojis, ever
 - No hyphens as em-dashes (use commas or periods to break up sentences)
+- No hyphenated compound phrases in prose. Write `per row`, `off heap`, `zero copy`, `type specialized`, `variable width`, `in place`, `map reduce`, `row by row`, `built in`, `memory mapped`, `cross language`, `batch scoped`, `sort only`, etc. Never `per-row`, `off-heap`, `zero-copy`, etc. Hyphens are only acceptable in YAML tags, URLs, code identifiers and proper nouns like tool names (`async-profiler`).
 - No Oxford comma (no comma before "and" in lists — write "A, B and C" not "A, B, and C")
 - No colons in headings
 - No preamble ("In today's rapidly evolving...", "Let me walk you through...")
@@ -97,6 +150,13 @@ before drafting, but here's the enforced ruleset:
 - No numbered lists for narrative flow — use prose paragraphs
 - No recap sections disguised as "What X actually looked like" — if a section just bullet-points things the reader already read in detail, cut it. Only keep genuinely new content (e.g. a code snippet not shown earlier).
 
+### Headings
+- Headings should be opinionated and memorable, not generic labels.
+- **Bad:** "The root allocator problem", "Compression", "Sorting", "The read side"
+- **Good:** "The off heap roulette", "Not every byte deserves to be squeezed", "Sorting under a memory ceiling", "Bounded memory, unbounded edge cases", "Death by a thousand casts"
+- A good heading has a point of view or tells the reader what they'll learn. A bad heading is just a topic name.
+- Don't front load setup sections with jargon that gets explained later. Keep setups simple and narrative.
+
 ### Paragraph discipline
 - **One idea per paragraph.** If a paragraph does two jobs (e.g. explains what something is AND why it's tedious), split it at the natural seam.
 - **Don't stack unrelated fixes into one block.** If you're listing 3+ distinct fixes or changes, either give each its own short paragraph or use a bulleted list. A wall of "I also... And I had to... And then..." loses the reader.
@@ -105,8 +165,33 @@ before drafting, but here's the enforced ruleset:
 - **Trim justification scaffolding.** If a decision is supported by 3 sources ("I read in guides... and on X... and leaked prompts confirmed it"), compress to the strongest one. The reader trusts you did the research.
 
 ### Opening
-Start with context and motivation. Why did the project exist? What problem was the user solving?
-The first paragraph should hook the reader with a concrete situation, not an abstract claim.
+Start with a storytelling hook that puts the reader in the moment. Not a clinical description of the system, but a personal narrative of how the project started.
+
+**Bad:** "I was building a custom map-reduce pipeline where Apache Arrow was the intermediate format. Mappers write Arrow files, reducers read them."
+
+**Good:** "So in 2024, I was building a custom map-reduce framework and I needed an intermediate format for shuffling data between mappers and reducers. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra. I read all that and thought this would be the easy part of the project. Little did I know."
+
+The opening should make the reader feel like they're hearing a story, not reading a spec.
+
+### Setup sections
+Setup sections should be simple and narrative. Their job is to orient the reader on what the project was and why it was hard, not to preview every technical detail that comes later.
+
+**Bad — front loading jargon:**
+> The map reduce path itself was already not simple. I needed Arrow to write efficiently, manage off heap memory correctly, avoid per row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics. The write path, the buffered I/O, the allocator sizing, the type specialized codecs, all of that had to work before sorting even entered the picture.
+>
+> On top of that, the outputs could be sorted. That added an entirely separate layer of complexity: bounded memory windows, heap based merging, lookahead across batch boundaries, cache invalidation on reload.
+
+This overwhelms the reader with terms (bounded memory windows, heap based merging, lookahead, cache invalidation) that mean nothing until they've read the later sections. It also reads like a table of contents, not a story.
+
+**Good — simple and narrative:**
+> Just getting Arrow to read and write correctly was already a full project. The Java APIs don't hold your hand the way PyArrow does, so I had to figure out a lot of things the hard way: how to write efficiently, how to manage memory that lives outside the JVM heap and how to avoid sneaking per row overhead into what's supposed to be a columnar format.
+>
+> And then there was sorting. The outputs could be sorted, which meant reducers sometimes needed to merge several sorted files into one globally ordered stream without loading everything into memory. That added a completely separate layer of complexity on top of what was already not simple.
+
+Rules for setup sections:
+- **Don't preview technical details.** If a concept has its own section later, don't name it in the setup. Just hint at the difficulty.
+- **Keep it to two layers.** "Here's what the project was" and "here's why it was harder than expected." That's enough.
+- **Use plain language.** "memory that lives outside the JVM heap" instead of "off heap memory management". The reader doesn't have context for jargon yet.
 
 ### Ending
 End with practical takeaways, a "my take" observation, or a forward-looking statement about
@@ -217,11 +302,14 @@ When writing a multi-part series:
 ### Phase 3: Style check
 After the first draft, do a self-review against the style rules in section 3. Fix violations before
 showing to the user. Common issues to catch:
+- **Staccato fragments** — the most common violation. Scan for any sentence under 6 words that states a standalone fact. Merge it into the surrounding prose.
+- **Clipped sentence pairs** — two short sentences where the first states a fact and the second explains it. Merge with "because", "which means", "so", etc.
+- **Declarative openers** — sections starting with "X is Y." instead of "I found that X is Y" or "The thing about X is..."
+- **Clinical/impersonal tone** — "The writer supports..." vs "I tried..." or "Arrow's model is..." vs "Arrow is..."
 - Hyphens used as em-dashes
 - Colons in headings
 - Preamble or meta-commentary that crept in
 - Sections that explain "what" without "why"
-- Overly polite tone (should be raw and direct)
 - Paragraphs doing double duty (split them)
 - Same fact or observation stated twice across sections (keep the better one)
 - Recap sections that just summarize earlier narrative (cut or replace with new content)
@@ -273,12 +361,16 @@ Before presenting a draft as "ready":
 - [ ] `draft: true` is set
 - [ ] No emojis anywhere
 - [ ] No hyphens used as em-dashes
+- [ ] No hyphenated compound phrases in prose (run the linter from section 11)
 - [ ] No Oxford commas (no comma before "and")
 - [ ] No colons in headings
 - [ ] No preamble or trailing summary
 - [ ] No dates or commit messages in prose
 - [ ] No "In this post" meta-commentary
-- [ ] Opening paragraph hooks with a concrete situation
+- [ ] No staccato fragments (scan for any standalone sentence under 6 words)
+- [ ] No clipped sentence pairs (fact + explanation as two short sentences instead of one)
+- [ ] No declarative section openers ("X is Y." — use first-person framing instead)
+- [ ] Opening paragraph reads like storytelling, not a system description
 - [ ] Every section explains WHY, not just what
 - [ ] No paragraph serves two unrelated ideas
 - [ ] No fact or observation repeated across sections
@@ -291,7 +383,64 @@ Before presenting a draft as "ready":
 
 ---
 
-## 10. Example blog posts for reference
+## 10. Style linter
+
+After writing or editing a blog post, run these checks against the markdown file to catch style
+violations mechanically. Run them using Grep/Bash before presenting the draft.
+
+### Hyphenated compounds in prose
+
+Scan for common hyphenated phrases that should not be hyphenated. Exclude lines that are
+frontmatter (between `---` markers), code blocks (between `` ``` `` markers), URLs, and iframe tags.
+
+```bash
+# Find hyphenated compound phrases in prose (excluding code blocks, frontmatter, URLs, iframes)
+# Review each match — false positives include tool names (async-profiler) and YAML tags
+grep -n -E '\b(per|off|zero|type|variable|in|map|row|built|memory|cross|batch|sort|non|multi|pre|re|well|all|out|mis|self|un|over|under|first|sub|semi|half|mid|co|inter|intra|meta|post|anti|counter|super|hyper|ultra)-[a-z]' "$FILE" | grep -v '```' | grep -v 'http' | grep -v 'iframe' | grep -v '^[0-9]*:  -'
+```
+
+Known false positives to ignore:
+- Tool/library names: `async-profiler`, `pre-commit`
+- YAML tags in frontmatter: `distributed-systems`, `data-engineering`
+- URLs and file paths
+- Code block contents
+
+### Oxford commas
+
+```bash
+# Find ", and" patterns (Oxford commas)
+grep -n ', and ' "$FILE" | grep -v '```'
+```
+
+### Staccato fragments
+
+```bash
+# Find short sentences (under ~40 chars ending in period) — review manually for fragments
+grep -n -E '^\S.{1,38}\.$' "$FILE" | grep -v '```' | grep -v '^[0-9]*:  -' | grep -v '^\-\-\-'
+```
+
+This catches candidates but requires manual review. Not every short sentence is a violation —
+only standalone declarative facts like "Arrow's IPC writer is chatty." or "This one was just wrong."
+
+### Section heading quality
+
+```bash
+# List all ## headings for manual review — check for generic labels
+grep -n '^## ' "$FILE"
+```
+
+Review each heading: does it have a point of view? Would a reader remember it? Generic labels
+like "Compression", "Sorting", "The X problem" should be replaced with opinionated alternatives.
+
+### Run all checks
+
+After drafting, run the full linter sequence against the file. Fix all true positives before
+showing the draft to the user. This catches the mechanical violations so the user's review
+can focus on substance, not formatting.
+
+---
+
+## 11. Example blog posts for reference
 
 Read these existing posts to calibrate voice and structure before writing:
 
