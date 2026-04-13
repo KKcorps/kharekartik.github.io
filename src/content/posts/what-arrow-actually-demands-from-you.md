@@ -54,7 +54,7 @@ Arrow's IPC writer is chatty. A single `writeBatch()` call doesn't produce one c
 
 Through a raw `FileOutputStream`, every one of those writes becomes a system call. The OS gets hit with dozens of small writes per batch, some of them a handful of bytes for alignment padding. That is a lot of kernel transitions for data that's going to the same file anyway.
 
-<iframe src="/widgets/arrow-perf/write-syscalls.html" width="100%" height="530" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+<iframe src="/widgets/arrow-perf/write-syscalls.html" width="100%" height="510" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 A `BufferedOutputStream` sits between Arrow's writer and the OS and absorbs those small writes into a userspace buffer. Nothing goes to the kernel until the buffer fills up or you explicitly flush. Instead of thirty syscalls per batch you get one or two. The writes coalesce in memory and hit disk as large sequential writes, which is what the I/O subsystem actually wants.
 
@@ -235,7 +235,7 @@ The sorted merge drove this complexity. Multiple sorted Arrow files need to merg
 
 The constraint was that it had to work when everything did not fit in memory. Each file could only keep a limited window of rows resident. When a window ran out, the next window had to load from disk without disrupting the global ordering the heap was maintaining. That requirement touched nearly everything: batch loading, heap seeding, pointer advancement, cache maintenance and edge cases around rewinds and partial batches.
 
-<iframe src="/widgets/arrow-perf/sorted-merge.html" width="100%" height="630" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+<iframe src="/widgets/arrow-perf/sorted-merge.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 One of the less obvious requirements was **lookahead**. The heap sometimes needed to peek at the *next* row of a file to decide what to push back, which meant sort column windows needed one extra row beyond the current batch boundary:
 

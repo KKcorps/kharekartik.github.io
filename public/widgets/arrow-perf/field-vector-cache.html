@@ -32,8 +32,6 @@
   }
   button:hover { border-color: var(--w-accent); color: var(--w-accent); }
   button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
-  button.danger { border-color: #e64a4a; }
-  button.danger:hover { color: #e64a4a; }
   .stats {
     display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
   }
@@ -46,10 +44,10 @@
   <div class="widget-title">// field vector cache staleness</div>
   <div class="widget-subtitle">step through to see how a stale cache silently reads wrong data</div>
 
-  <svg id="main-svg" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+  <svg id="main-svg" viewBox="0 0 720 370" xmlns="http://www.w3.org/2000/svg">
     <g id="content"></g>
-    <rect x="40" y="310" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
-    <text x="360" y="335" text-anchor="middle" fill="#888" font-size="11"
+    <rect x="40" y="322" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="347" text-anchor="middle" fill="#888" font-size="12"
           font-family="IBM Plex Mono" id="status-text">step through 5 stages to see the cache bug</text>
   </svg>
 
@@ -87,67 +85,28 @@ const ACCENT_FILL_DARK = _mix(_ac, 0.04);
 const ACCENT_FAINT = _mix(_ac, 0.10);
 document.documentElement.style.setProperty('--w-accent', ACCENT);
 
-// 1. Step definitions
+// 1. Steps
 const BATCHES = {
-  1: { label: 'BATCH 1', col_a: [10, 20, 30], col_b: ['"abc"', '"def"', '"ghi"'] },
-  2: { label: 'BATCH 2', col_a: [40, 50, 60], col_b: ['"xyz"', '"uvw"', '"rst"'] }
+  1: { label: 'BATCH 1', rows: ['10, "abc"', '20, "def"'] },
+  2: { label: 'BATCH 2', rows: ['40, "xyz"', '50, "uvw"'] }
 };
 
 const STEPS = [
-  {
-    id: 0,
-    title: 'Initial state',
-    rootBatch: null,
-    cacheTarget: null,
-    readResult: null,
-    status: 'No batches loaded yet. Cache is empty.',
-    state: 'neutral'
-  },
-  {
-    id: 1,
-    title: 'Load Batch 1, populate cache',
-    rootBatch: 1,
-    cacheTarget: 1,
-    readResult: null,
-    status: 'Root created from disk. Cache stores field vector references. Cache is fresh.',
-    state: 'ok'
-  },
-  {
-    id: 2,
-    title: 'Read rows via cache',
-    rootBatch: 1,
-    cacheTarget: 1,
-    readResult: { values: ['10, "abc"', '20, "def"', '30, "ghi"'], correct: true },
-    status: 'Cache points to Batch 1 vectors. Reads return Batch 1 data. Correct.',
-    state: 'ok'
-  },
-  {
-    id: 3,
-    title: 'Load Batch 2, cache NOT updated',
-    rootBatch: 2,
-    cacheTarget: 1,
-    readResult: null,
-    status: 'New root from disk, but cache still holds Batch 1 references. STALE!',
-    state: 'warn'
-  },
-  {
-    id: 4,
-    title: 'Read rows via stale cache',
-    rootBatch: 2,
-    cacheTarget: 1,
-    readResult: { values: ['10, "abc"', '20, "def"', '30, "ghi"'], correct: false, expected: ['40, "xyz"', '50, "uvw"', '60, "rst"'] },
-    status: 'Cache reads from Batch 1 vectors. Returns WRONG DATA. Expected Batch 2 values.',
-    state: 'error'
-  },
-  {
-    id: 5,
-    title: 'Fix: invalidate cache on batch load',
-    rootBatch: 2,
-    cacheTarget: 2,
-    readResult: { values: ['40, "xyz"', '50, "uvw"', '60, "rst"'], correct: true },
-    status: 'Cache updated on batch reload. Reads now return correct Batch 2 data.',
-    state: 'ok'
-  }
+  { id: 0, title: 'Initial state', rootBatch: null, cacheTarget: null, readResult: null,
+    status: 'No batches loaded yet. Cache is empty.', state: 'neutral' },
+  { id: 1, title: 'Load Batch 1, populate cache', rootBatch: 1, cacheTarget: 1, readResult: null,
+    status: 'Root created from disk. Cache stores field vector references. Cache is fresh.', state: 'ok' },
+  { id: 2, title: 'Read rows via cache', rootBatch: 1, cacheTarget: 1,
+    readResult: { values: ['10, "abc"', '20, "def"'], correct: true },
+    status: 'Cache points to Batch 1 vectors. Reads return correct Batch 1 data.', state: 'ok' },
+  { id: 3, title: 'Load Batch 2, cache NOT updated', rootBatch: 2, cacheTarget: 1, readResult: null,
+    status: 'New root loaded from disk but cache still holds Batch 1 references. STALE!', state: 'warn' },
+  { id: 4, title: 'Read rows via stale cache', rootBatch: 2, cacheTarget: 1,
+    readResult: { values: ['10, "abc"', '20, "def"'], correct: false, expected: ['40, "xyz"', '50, "uvw"'] },
+    status: 'Cache reads from Batch 1 vectors. Returns WRONG DATA. Expected Batch 2.', state: 'error' },
+  { id: 5, title: 'Fix: invalidate cache on batch load', rootBatch: 2, cacheTarget: 2,
+    readResult: { values: ['40, "xyz"', '50, "uvw"'], correct: true },
+    status: 'Cache updated on batch reload. Reads now return correct Batch 2 data.', state: 'ok' }
 ];
 
 // 2. State
@@ -159,12 +118,12 @@ const statusText = document.getElementById('status-text');
 const statStep = document.getElementById('stat-step');
 const statCorrect = document.getElementById('stat-correct');
 
-// Layout constants
-const BOX_W = 185;
-const BOX_H = 165;
-const BOX_Y = 50;
-const ROOT_X = 40;
-const CACHE_X = 268;
+// Layout — three wider panels
+const BOX_W = 195;
+const BOX_H = 180;
+const BOX_Y = 60;
+const ROOT_X = 30;
+const CACHE_X = 263;
 const RESULT_X = 495;
 
 function makeSvgEl(tag, attrs) {
@@ -173,12 +132,12 @@ function makeSvgEl(tag, attrs) {
   return el;
 }
 
-function addText(parent, x, y, text, opts = {}) {
+function addText(parent, x, y, label, opts = {}) {
   const el = makeSvgEl('text', {
-    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '12',
     'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'middle'
   });
-  el.textContent = text;
+  el.textContent = label;
   parent.appendChild(el);
   return el;
 }
@@ -187,7 +146,7 @@ function stateColor(state) {
   if (state === 'ok') return ACCENT;
   if (state === 'warn') return '#e6a64a';
   if (state === 'error') return '#e64a4a';
-  return '#222';
+  return '#333';
 }
 
 function stateFill(state) {
@@ -206,241 +165,195 @@ function render() {
 
   // Step indicator dots
   for (let i = 0; i <= 5; i++) {
-    const dx = 260 + i * 40;
+    const dx = 235 + i * 50;
     const active = i === currentStep;
     const past = i < currentStep;
     content.appendChild(makeSvgEl('circle', {
-      cx: dx, cy: 20, r: active ? 6 : 4,
+      cx: dx, cy: 18, r: active ? 8 : 5,
       fill: active ? sc : (past ? ACCENT_DIM : 'none'),
       stroke: active ? sc : (past ? ACCENT_DIM : '#333'),
       'stroke-width': active ? 2 : 1
     }));
-    addText(content, dx, 36, String(i), {
-      fill: active ? sc : '#444', size: '8'
-    });
+    addText(content, dx, 36, String(i), { fill: active ? sc : '#555', size: '10' });
     if (i < 5) {
       content.appendChild(makeSvgEl('line', {
-        x1: dx + 8, y1: 20, x2: dx + 32, y2: 20,
+        x1: dx + 10, y1: 18, x2: dx + 40, y2: 18,
         stroke: past ? ACCENT_DIM : '#222', 'stroke-width': 1
       }));
     }
   }
 
   // Step title
-  addText(content, 360, BOX_Y - 2, step.title.toUpperCase(), { fill: sc, size: '9' });
+  addText(content, 360, BOX_Y - 6, step.title.toUpperCase(), { fill: sc, size: '11' });
 
   // ── ROOT PANEL ──
-  const rootColor = step.rootBatch ? sc : '#222';
+  const rootColor = step.rootBatch ? sc : '#333';
   content.appendChild(makeSvgEl('rect', {
     x: ROOT_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
     fill: step.rootBatch ? sf : 'none',
     stroke: rootColor, 'stroke-width': step.rootBatch ? 1.5 : 1
   }));
-  addText(content, ROOT_X + BOX_W / 2, BOX_Y + 18, 'VECTORSCHEMAROOT', { fill: '#666', size: '8' });
+  addText(content, ROOT_X + BOX_W / 2, BOX_Y + 20, 'VECTORSCHEMAROOT', { fill: '#666', size: '10' });
 
   if (step.rootBatch) {
     const batch = BATCHES[step.rootBatch];
-    addText(content, ROOT_X + BOX_W / 2, BOX_Y + 38, batch.label, { fill: rootColor, size: '11' });
+    addText(content, ROOT_X + BOX_W / 2, BOX_Y + 46, batch.label, { fill: rootColor, size: '14' });
 
-    // Column data
-    addText(content, ROOT_X + 12, BOX_Y + 62, 'col_a (INT)', { fill: '#555', size: '8', anchor: 'start' });
-    for (let i = 0; i < 3; i++) {
-      const cy = BOX_Y + 72 + i * 20;
+    // Row data
+    for (let i = 0; i < batch.rows.length; i++) {
+      const ry = BOX_Y + 64 + i * 44;
       content.appendChild(makeSvgEl('rect', {
-        x: ROOT_X + 12, y: cy, width: 55, height: 16, rx: 2,
+        x: ROOT_X + 14, y: ry, width: BOX_W - 28, height: 34, rx: 3,
         fill: 'none', stroke: ACCENT_DIM, 'stroke-width': 1
       }));
-      addText(content, ROOT_X + 39, cy + 12, String(batch.col_a[i]), { fill: '#888', size: '9' });
-    }
-
-    addText(content, ROOT_X + 100, BOX_Y + 62, 'col_b (VARCHAR)', { fill: '#555', size: '8', anchor: 'start' });
-    for (let i = 0; i < 3; i++) {
-      const cy = BOX_Y + 72 + i * 20;
-      content.appendChild(makeSvgEl('rect', {
-        x: ROOT_X + 100, y: cy, width: 75, height: 16, rx: 2,
-        fill: 'none', stroke: ACCENT_DIM, 'stroke-width': 1
-      }));
-      addText(content, ROOT_X + 137, cy + 12, batch.col_b[i], { fill: '#888', size: '9' });
+      addText(content, ROOT_X + BOX_W / 2, ry + 22, batch.rows[i], { fill: '#888', size: '12' });
+      addText(content, ROOT_X + 20, ry + 12, `row ${i}`, { fill: '#444', size: '9', anchor: 'start' });
     }
   } else {
-    addText(content, ROOT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '10' });
+    addText(content, ROOT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '13' });
   }
 
   // ── CACHE PANEL ──
   const cacheStale = step.cacheTarget && step.rootBatch && step.cacheTarget !== step.rootBatch;
-  const cacheColor = cacheStale ? '#e6a64a' : (step.cacheTarget ? sc : '#222');
+  const cacheColor = cacheStale ? '#e6a64a' : (step.cacheTarget ? sc : '#333');
   const cacheFill = cacheStale ? '#1a150a' : (step.cacheTarget ? sf : 'none');
 
   content.appendChild(makeSvgEl('rect', {
     x: CACHE_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
-    fill: cacheFill,
-    stroke: cacheColor, 'stroke-width': step.cacheTarget ? 1.5 : 1
+    fill: cacheFill, stroke: cacheColor, 'stroke-width': step.cacheTarget ? 1.5 : 1
   }));
-  addText(content, CACHE_X + BOX_W / 2, BOX_Y + 18, 'CACHED FIELD VECTORS', { fill: '#666', size: '8' });
+  addText(content, CACHE_X + BOX_W / 2, BOX_Y + 20, 'CACHED VECTORS', { fill: '#666', size: '10' });
 
   if (step.cacheTarget) {
     const targetBatch = BATCHES[step.cacheTarget];
-    addText(content, CACHE_X + BOX_W / 2, BOX_Y + 42, `\u2192 ${targetBatch.label} refs`, {
-      fill: cacheStale ? '#e6a64a' : cacheColor, size: '11'
+    addText(content, CACHE_X + BOX_W / 2, BOX_Y + 50, `\u2192 ${targetBatch.label} refs`, {
+      fill: cacheStale ? '#e6a64a' : cacheColor, size: '13'
     });
 
     if (cacheStale) {
-      addText(content, CACHE_X + BOX_W / 2, BOX_Y + 62, 'STALE!', { fill: '#e6a64a', size: '10' });
-      // Dashed border on cache entries to show staleness
-      for (let i = 0; i < 2; i++) {
-        const cy = BOX_Y + 78 + i * 28;
-        content.appendChild(makeSvgEl('rect', {
-          x: CACHE_X + 15, y: cy, width: BOX_W - 30, height: 22, rx: 2,
-          fill: 'none', stroke: '#e6a64a', 'stroke-width': 1,
-          'stroke-dasharray': '4,3'
-        }));
-        addText(content, CACHE_X + BOX_W / 2, cy + 15,
-          i === 0 ? `vectors[${i}] \u2192 Batch 1` : `vectors[${i}] \u2192 Batch 1`,
-          { fill: '#e6a64a', size: '9' }
-        );
-      }
-    } else {
-      for (let i = 0; i < 2; i++) {
-        const cy = BOX_Y + 72 + i * 28;
-        content.appendChild(makeSvgEl('rect', {
-          x: CACHE_X + 15, y: cy, width: BOX_W - 30, height: 22, rx: 2,
-          fill: ACCENT_FILL_DARK, stroke: ACCENT_DIM, 'stroke-width': 1
-        }));
-        addText(content, CACHE_X + BOX_W / 2, cy + 15,
-          `vectors[${i}] \u2192 Batch ${step.cacheTarget}`,
-          { fill: ACCENT_MID, size: '9' }
-        );
-      }
+      addText(content, CACHE_X + BOX_W / 2, BOX_Y + 74, 'STALE!', { fill: '#e6a64a', size: '14' });
+    }
+
+    const entryY = cacheStale ? BOX_Y + 92 : BOX_Y + 72;
+    for (let i = 0; i < 2; i++) {
+      const ey = entryY + i * 38;
+      content.appendChild(makeSvgEl('rect', {
+        x: CACHE_X + 14, y: ey, width: BOX_W - 28, height: 30, rx: 3,
+        fill: 'none', stroke: cacheStale ? '#e6a64a' : ACCENT_DIM,
+        'stroke-width': 1, 'stroke-dasharray': cacheStale ? '4,3' : 'none'
+      }));
+      addText(content, CACHE_X + BOX_W / 2, ey + 20,
+        `fv[${i}] \u2192 Batch ${step.cacheTarget}`,
+        { fill: cacheStale ? '#e6a64a' : ACCENT_MID, size: '11' }
+      );
     }
   } else {
-    addText(content, CACHE_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '10' });
+    addText(content, CACHE_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'empty', { fill: '#333', size: '13' });
   }
 
   // ── RESULT PANEL ──
   const hasResult = step.readResult !== null;
   const resultCorrect = hasResult && step.readResult.correct;
-  const resultColor = !hasResult ? '#222' : (resultCorrect ? ACCENT : '#e64a4a');
+  const resultColor = !hasResult ? '#333' : (resultCorrect ? ACCENT : '#e64a4a');
   const resultFill = !hasResult ? 'none' : (resultCorrect ? ACCENT_FILL : '#1a0a0a');
 
   content.appendChild(makeSvgEl('rect', {
     x: RESULT_X, y: BOX_Y, width: BOX_W, height: BOX_H, rx: 3,
-    fill: resultFill,
-    stroke: resultColor, 'stroke-width': hasResult ? 1.5 : 1
+    fill: resultFill, stroke: resultColor, 'stroke-width': hasResult ? 1.5 : 1
   }));
-  addText(content, RESULT_X + BOX_W / 2, BOX_Y + 18, 'READ RESULT', { fill: '#666', size: '8' });
+  addText(content, RESULT_X + BOX_W / 2, BOX_Y + 20, 'READ RESULT', { fill: '#666', size: '10' });
 
   if (hasResult) {
     const r = step.readResult;
-    addText(content, RESULT_X + BOX_W / 2, BOX_Y + 40,
-      r.correct ? 'CORRECT' : 'WRONG DATA',
-      { fill: resultColor, size: '11' }
+    addText(content, RESULT_X + BOX_W / 2, BOX_Y + 48,
+      r.correct ? 'CORRECT' : 'WRONG DATA', { fill: resultColor, size: '14' }
     );
 
     for (let i = 0; i < r.values.length; i++) {
-      const cy = BOX_Y + 55 + i * 22;
+      const ry = BOX_Y + 64 + i * 44;
       content.appendChild(makeSvgEl('rect', {
-        x: RESULT_X + 10, y: cy, width: BOX_W - 20, height: 18, rx: 2,
+        x: RESULT_X + 14, y: ry, width: BOX_W - 28, height: 34, rx: 3,
         fill: 'none', stroke: r.correct ? ACCENT_DIM : '#e64a4a',
         'stroke-width': 1, 'stroke-dasharray': r.correct ? 'none' : '4,3'
       }));
-      addText(content, RESULT_X + BOX_W / 2, cy + 13, r.values[i], {
-        fill: r.correct ? '#888' : '#e64a4a', size: '9'
+      addText(content, RESULT_X + BOX_W / 2, ry + 22, r.values[i], {
+        fill: r.correct ? '#888' : '#e64a4a', size: '12'
       });
     }
 
     if (!r.correct && r.expected) {
-      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 18, 'expected:', { fill: '#555', size: '8' });
-      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 6, r.expected[0] + ' ...', { fill: ACCENT_SOFT, size: '8' });
+      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 22, 'expected:', { fill: '#666', size: '10' });
+      addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H - 6, r.expected[0], { fill: ACCENT_SOFT, size: '11' });
     }
   } else {
-    addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'no read yet', { fill: '#333', size: '10' });
+    addText(content, RESULT_X + BOX_W / 2, BOX_Y + BOX_H / 2 + 4, 'no read yet', { fill: '#333', size: '13' });
   }
 
-  // ── ARROWS between panels ──
+  // ── ARROWS ──
   const arrowY = BOX_Y + BOX_H / 2;
 
-  // Root → Cache arrow
   if (step.cacheTarget) {
     const arrowColor = cacheStale ? '#e6a64a' : (step.state === 'ok' ? ACCENT_DIM : '#333');
     content.appendChild(makeSvgEl('line', {
-      x1: ROOT_X + BOX_W + 4, y1: arrowY,
-      x2: CACHE_X - 4, y2: arrowY,
-      stroke: arrowColor, 'stroke-width': 1,
-      'stroke-dasharray': cacheStale ? '4,3' : 'none'
+      x1: ROOT_X + BOX_W + 4, y1: arrowY, x2: CACHE_X - 4, y2: arrowY,
+      stroke: arrowColor, 'stroke-width': 1.5,
+      'stroke-dasharray': cacheStale ? '5,4' : 'none'
     }));
     if (cacheStale) {
-      // X mark
-      const mx = (ROOT_X + BOX_W + CACHE_X) / 2;
-      addText(content, mx, arrowY - 8, '\u2717', { fill: '#e6a64a', size: '12' });
+      addText(content, (ROOT_X + BOX_W + CACHE_X) / 2, arrowY - 10, '\u2717', { fill: '#e6a64a', size: '16' });
     }
   }
 
-  // Cache → Result arrow
   if (hasResult) {
     const arrowColor = resultCorrect ? ACCENT_DIM : '#e64a4a';
     content.appendChild(makeSvgEl('line', {
-      x1: CACHE_X + BOX_W + 4, y1: arrowY,
-      x2: RESULT_X - 4, y2: arrowY,
-      stroke: arrowColor, 'stroke-width': 1,
-      'stroke-dasharray': resultCorrect ? 'none' : '4,3'
+      x1: CACHE_X + BOX_W + 4, y1: arrowY, x2: RESULT_X - 8, y2: arrowY,
+      stroke: arrowColor, 'stroke-width': 1.5,
+      'stroke-dasharray': resultCorrect ? 'none' : '5,4'
     }));
-    const ax = RESULT_X - 4;
+    const ax = RESULT_X - 8;
     content.appendChild(makeSvgEl('polygon', {
-      points: `${ax - 6},${arrowY - 3} ${ax},${arrowY} ${ax - 6},${arrowY + 3}`,
+      points: `${ax - 7},${arrowY - 4} ${ax},${arrowY} ${ax - 7},${arrowY + 4}`,
       fill: arrowColor
     }));
   }
 
-  // Code snippet area
-  const codeY = BOX_Y + BOX_H + 16;
+  // Code hint
+  const codeY = BOX_Y + BOX_H + 20;
   if (currentStep === 5) {
     addText(content, 360, codeY, 'if (loadedBatchChanged) { cache = root.getFieldVectors(); }', {
-      fill: ACCENT_SOFT, size: '9'
+      fill: ACCENT_SOFT, size: '11'
     });
   } else if (currentStep === 3 || currentStep === 4) {
     addText(content, 360, codeY, '// cache NOT invalidated on batch reload', {
-      fill: '#e6a64a', size: '9'
+      fill: '#e6a64a', size: '11'
     });
   }
 
-  // Update stats
+  // Stats
   statStep.textContent = currentStep;
   if (step.state === 'ok') {
-    statCorrect.textContent = 'valid';
-    statCorrect.style.color = '';
-    statCorrect.className = '';
+    statCorrect.textContent = 'valid'; statCorrect.style.color = ''; statCorrect.className = '';
   } else if (step.state === 'error') {
-    statCorrect.textContent = 'WRONG';
-    statCorrect.style.color = '#e64a4a';
-    statCorrect.className = 'del';
+    statCorrect.textContent = 'WRONG'; statCorrect.style.color = '#e64a4a'; statCorrect.className = 'del';
   } else if (step.state === 'warn') {
-    statCorrect.textContent = 'stale';
-    statCorrect.style.color = '#e6a64a';
-    statCorrect.className = '';
+    statCorrect.textContent = 'stale'; statCorrect.style.color = '#e6a64a'; statCorrect.className = '';
   } else {
-    statCorrect.textContent = '--';
-    statCorrect.style.color = '';
-    statCorrect.className = '';
+    statCorrect.textContent = '--'; statCorrect.style.color = ''; statCorrect.className = '';
   }
 
-  // Status
   statusText.textContent = step.status;
   statusText.setAttribute('fill', step.state === 'error' ? '#e64a4a' : (step.state === 'warn' ? '#e6a64a' : '#888'));
 }
 
-// 5. Event handlers
+// 5. Events
 document.getElementById('btn-next').addEventListener('click', () => {
   if (currentStep < STEPS.length - 1) { currentStep++; render(); }
 });
-
 document.getElementById('btn-prev').addEventListener('click', () => {
   if (currentStep > 0) { currentStep--; render(); }
 });
-
-document.getElementById('btn-reset').addEventListener('click', () => {
-  currentStep = 0;
-  render();
-});
+document.getElementById('btn-reset').addEventListener('click', () => { currentStep = 0; render(); });
 
 // 6. Init
 render();

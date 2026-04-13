@@ -36,7 +36,6 @@
     display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
   }
   .stats span { color: var(--w-accent); }
-  .stats .del { color: #e64a4a; }
 </style>
 </head>
 <body>
@@ -44,10 +43,10 @@
   <div class="widget-title">// arrow write path</div>
   <div class="widget-subtitle">toggle between unbuffered and buffered to see how syscalls change</div>
 
-  <svg id="main-svg" viewBox="0 0 720 330" xmlns="http://www.w3.org/2000/svg">
+  <svg id="main-svg" viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg">
     <g id="content"></g>
-    <rect x="40" y="280" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
-    <text x="360" y="305" text-anchor="middle" fill="#888" font-size="11"
+    <rect x="40" y="272" width="640" height="40" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="297" text-anchor="middle" fill="#888" font-size="12"
           font-family="IBM Plex Mono" id="status-text">press play or step through write operations</text>
   </svg>
 
@@ -61,7 +60,7 @@
   </div>
   <div class="stats">
     <div>syscalls: <span id="stat-syscalls">0</span></div>
-    <div>operations: <span id="stat-ops">0</span> / 8</div>
+    <div>operations: <span id="stat-ops">0</span> / 6</div>
     <div>buffer used: <span id="stat-buffer">0 B</span></div>
   </div>
 </div>
@@ -91,14 +90,12 @@ document.documentElement.style.setProperty('--w-accent', ACCENT);
 
 // 1. State
 const WRITES = [
-  { name: 'schema metadata', bytes: 128 },
+  { name: 'metadata block', bytes: 128 },
   { name: 'col A (int32)', bytes: 4096 },
   { name: 'col B (varchar)', bytes: 12288 },
   { name: 'col C (int64)', bytes: 8192 },
-  { name: 'validity bitmap', bytes: 64 },
-  { name: 'offset buffer', bytes: 2048 },
-  { name: 'alignment pad', bytes: 6 },
-  { name: 'batch footer', bytes: 256 }
+  { name: 'validity + offsets', bytes: 2112 },
+  { name: 'footer + padding', bytes: 262 }
 ];
 
 let mode = 'unbuffered';
@@ -113,17 +110,16 @@ const statSyscalls = document.getElementById('stat-syscalls');
 const statOps = document.getElementById('stat-ops');
 const statBuffer = document.getElementById('stat-buffer');
 
-// Layout constants
+// Layout
 const LEFT_X = 40;
-const LEFT_W = 180;
-const MID_X = 280;
+const LEFT_W = 210;
+const MID_X = 290;
 const MID_W = 140;
 const RIGHT_X = 520;
 const RIGHT_W = 160;
-const ROW_H = 26;
-const ROW_GAP = 4;
-const START_Y = 30;
-const BUFFER_CAP = 8 * 1024 * 1024;
+const ROW_H = 34;
+const ROW_GAP = 6;
+const START_Y = 28;
 
 function fmtBytes(b) {
   if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
@@ -136,13 +132,13 @@ function makeSvgEl(tag, attrs) {
   return el;
 }
 
-function makeText(x, y, label, opts = {}) {
+function addText(parent, x, y, label, opts = {}) {
   const el = makeSvgEl('text', {
-    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '10',
-    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start',
-    ...opts.extra || {}
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '12',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
   });
   el.textContent = label;
+  parent.appendChild(el);
   return el;
 }
 
@@ -151,16 +147,11 @@ function render() {
   content.innerHTML = '';
 
   // Column headers
-  const hWriter = makeText(LEFT_X + LEFT_W / 2, 18, 'ARROW WRITER', { fill: '#666', size: '10', anchor: 'middle' });
-  content.appendChild(hWriter);
-
+  addText(content, LEFT_X + LEFT_W / 2, 18, 'ARROW WRITER', { fill: '#666', size: '11', anchor: 'middle' });
   if (mode === 'buffered') {
-    const hBuf = makeText(MID_X + MID_W / 2, 18, '8 MB BUFFER', { fill: '#666', size: '10', anchor: 'middle' });
-    content.appendChild(hBuf);
+    addText(content, MID_X + MID_W / 2, 18, '8 MB BUFFER', { fill: '#666', size: '11', anchor: 'middle' });
   }
-
-  const hKernel = makeText(RIGHT_X + RIGHT_W / 2, 18, 'OS KERNEL', { fill: '#666', size: '10', anchor: 'middle' });
-  content.appendChild(hKernel);
+  addText(content, RIGHT_X + RIGHT_W / 2, 18, 'OS KERNEL', { fill: '#666', size: '11', anchor: 'middle' });
 
   // Writer box outline
   const writerH = WRITES.length * (ROW_H + ROW_GAP) - ROW_GAP + 16;
@@ -175,26 +166,21 @@ function render() {
     fill: 'none', stroke: '#222', 'stroke-width': 1
   }));
 
-  // Syscall count in kernel box
+  // Compute state
   let syscalls = 0;
   let bufferUsed = 0;
-
   if (mode === 'unbuffered') {
     syscalls = Math.max(0, step + 1);
   } else {
-    // Buffer mode: flush when buffer would exceed capacity (all ops fit in 8MB, so 1 flush at end)
-    for (let i = 0; i <= step && i < WRITES.length; i++) {
-      bufferUsed += WRITES[i].bytes;
-    }
+    for (let i = 0; i <= step && i < WRITES.length; i++) bufferUsed += WRITES[i].bytes;
     syscalls = step >= WRITES.length - 1 ? 1 : 0;
   }
 
-  const scText = makeText(RIGHT_X + RIGHT_W / 2, START_Y + writerH / 2 - 10, 'SYSCALLS', { fill: '#444', size: '9', anchor: 'middle' });
-  content.appendChild(scText);
-  const scNum = makeText(RIGHT_X + RIGHT_W / 2, START_Y + writerH / 2 + 14, String(syscalls), {
-    fill: syscalls > 2 ? '#e64a4a' : ACCENT, size: '28', anchor: 'middle'
+  // Syscall count in kernel box
+  addText(content, RIGHT_X + RIGHT_W / 2, START_Y + writerH / 2 - 12, 'SYSCALLS', { fill: '#555', size: '10', anchor: 'middle' });
+  addText(content, RIGHT_X + RIGHT_W / 2, START_Y + writerH / 2 + 18, String(syscalls), {
+    fill: syscalls > 2 ? '#e64a4a' : ACCENT, size: '32', anchor: 'middle'
   });
-  content.appendChild(scNum);
 
   // Buffer box (buffered mode)
   if (mode === 'buffered') {
@@ -203,7 +189,6 @@ function render() {
       fill: 'none', stroke: '#222', 'stroke-width': 1
     }));
 
-    // Fill level
     if (step >= 0 && syscalls === 0) {
       const fillH = Math.min((bufferUsed / 30000) * (writerH - 4), writerH - 4);
       content.appendChild(makeSvgEl('rect', {
@@ -212,17 +197,10 @@ function render() {
       }));
     }
 
-    // Buffer label
     if (step >= 0 && step < WRITES.length - 1) {
-      const bufLabel = makeText(MID_X + MID_W / 2, START_Y + writerH / 2, fmtBytes(bufferUsed), {
-        fill: ACCENT_SOFT, size: '10', anchor: 'middle'
-      });
-      content.appendChild(bufLabel);
+      addText(content, MID_X + MID_W / 2, START_Y + writerH / 2, fmtBytes(bufferUsed), { fill: ACCENT_SOFT, size: '12', anchor: 'middle' });
     } else if (syscalls > 0) {
-      const flushed = makeText(MID_X + MID_W / 2, START_Y + writerH / 2, 'flushed', {
-        fill: ACCENT_MID, size: '10', anchor: 'middle'
-      });
-      content.appendChild(flushed);
+      addText(content, MID_X + MID_W / 2, START_Y + writerH / 2, 'flushed', { fill: ACCENT_MID, size: '12', anchor: 'middle' });
     }
   }
 
@@ -232,81 +210,63 @@ function render() {
     const done = i <= step;
     const current = i === step;
 
-    // Row background
-    if (done) {
-      content.appendChild(makeSvgEl('rect', {
-        x: LEFT_X + 4, y, width: LEFT_W - 8, height: ROW_H, rx: 2,
-        fill: current ? ACCENT_FILL : ACCENT_FILL_DARK, stroke: current ? ACCENT : ACCENT_DIM,
-        'stroke-width': current ? 1.5 : 1
-      }));
-    } else {
-      content.appendChild(makeSvgEl('rect', {
-        x: LEFT_X + 4, y, width: LEFT_W - 8, height: ROW_H, rx: 2,
-        fill: 'none', stroke: '#222', 'stroke-width': 1
-      }));
-    }
+    // Row rect
+    content.appendChild(makeSvgEl('rect', {
+      x: LEFT_X + 6, y, width: LEFT_W - 12, height: ROW_H, rx: 2,
+      fill: current ? ACCENT_FILL : (done ? ACCENT_FILL_DARK : 'none'),
+      stroke: current ? ACCENT : (done ? ACCENT_DIM : '#222'),
+      'stroke-width': current ? 1.5 : 1
+    }));
 
     // Op name
-    const nameT = makeText(LEFT_X + 10, y + 11, WRITES[i].name, {
-      fill: done ? (current ? ACCENT : ACCENT_MID) : '#444', size: '8'
+    addText(content, LEFT_X + 14, y + 14, WRITES[i].name, {
+      fill: done ? (current ? ACCENT : ACCENT_MID) : '#555', size: '11'
     });
-    content.appendChild(nameT);
 
     // Byte count
-    const byteT = makeText(LEFT_X + LEFT_W - 10, y + 22, fmtBytes(WRITES[i].bytes), {
-      fill: done ? '#666' : '#333', size: '8', anchor: 'end'
+    addText(content, LEFT_X + LEFT_W - 14, y + 28, fmtBytes(WRITES[i].bytes), {
+      fill: done ? '#888' : '#444', size: '10', anchor: 'end'
     });
-    content.appendChild(byteT);
 
-    // Arrows from completed ops
+    // Arrows
     if (done) {
-      const arrowStartX = LEFT_X + LEFT_W;
       const arrowY = y + ROW_H / 2;
-
       if (mode === 'unbuffered') {
-        // Direct arrow to kernel
-        const arrowEndX = RIGHT_X;
         content.appendChild(makeSvgEl('line', {
-          x1: arrowStartX + 4, y1: arrowY, x2: arrowEndX - 8, y2: arrowY,
+          x1: LEFT_X + LEFT_W + 6, y1: arrowY, x2: RIGHT_X - 10, y2: arrowY,
           stroke: current ? '#e64a4a' : '#333', 'stroke-width': current ? 1.5 : 1,
           'stroke-dasharray': current ? 'none' : '3,3'
         }));
-        // Arrowhead
-        const ax = arrowEndX - 8;
+        const ax = RIGHT_X - 10;
         content.appendChild(makeSvgEl('polygon', {
-          points: `${ax},${arrowY - 3} ${ax + 6},${arrowY} ${ax},${arrowY + 3}`,
+          points: `${ax},${arrowY - 4} ${ax + 7},${arrowY} ${ax},${arrowY + 4}`,
           fill: current ? '#e64a4a' : '#444'
         }));
       } else {
-        // Arrow to buffer
-        const arrowEndX = MID_X;
         content.appendChild(makeSvgEl('line', {
-          x1: arrowStartX + 4, y1: arrowY, x2: arrowEndX - 4, y2: arrowY,
+          x1: LEFT_X + LEFT_W + 6, y1: arrowY, x2: MID_X - 4, y2: arrowY,
           stroke: current ? ACCENT : ACCENT_DIM, 'stroke-width': current ? 1.5 : 1
         }));
       }
     }
   }
 
-  // Big flush arrow from buffer to kernel (buffered mode, when done)
+  // Flush arrow (buffered, when done)
   if (mode === 'buffered' && syscalls > 0) {
     const midY = START_Y + writerH / 2;
     content.appendChild(makeSvgEl('line', {
-      x1: MID_X + MID_W + 4, y1: midY, x2: RIGHT_X - 8, y2: midY,
+      x1: MID_X + MID_W + 6, y1: midY, x2: RIGHT_X - 10, y2: midY,
       stroke: ACCENT, 'stroke-width': 2.5
     }));
-    const ax = RIGHT_X - 8;
+    const ax = RIGHT_X - 10;
     content.appendChild(makeSvgEl('polygon', {
       points: `${ax},${midY - 5} ${ax + 8},${midY} ${ax},${midY + 5}`,
       fill: ACCENT
     }));
-    const flushLabel = makeText((MID_X + MID_W + RIGHT_X) / 2, midY - 10, '1 flush', {
-      fill: ACCENT, size: '9', anchor: 'middle'
-    });
-    content.appendChild(flushLabel);
+    addText(content, (MID_X + MID_W + RIGHT_X) / 2, midY - 12, '1 flush', { fill: ACCENT, size: '11', anchor: 'middle' });
   }
 
-  // Update stats
+  // Stats
   statSyscalls.textContent = syscalls;
   statSyscalls.style.color = syscalls > 2 ? '#e64a4a' : '';
   statOps.textContent = Math.max(0, step + 1);
@@ -315,38 +275,25 @@ function render() {
   // Status text
   if (step < 0) {
     statusText.textContent = 'press play or step through write operations';
+    statusText.setAttribute('fill', '#888');
   } else if (step < WRITES.length) {
     const op = WRITES[step];
     if (mode === 'unbuffered') {
       statusText.textContent = `write "${op.name}" (${fmtBytes(op.bytes)}) \u2192 syscall #${step + 1}`;
     } else {
-      if (step < WRITES.length - 1) {
-        statusText.textContent = `write "${op.name}" (${fmtBytes(op.bytes)}) \u2192 absorbed by buffer`;
-      } else {
-        statusText.textContent = `all operations buffered \u2192 single flush to kernel`;
-      }
+      statusText.textContent = step < WRITES.length - 1
+        ? `write "${op.name}" (${fmtBytes(op.bytes)}) \u2192 absorbed by buffer`
+        : `all operations buffered \u2192 single flush to kernel`;
     }
-  } else {
-    if (mode === 'unbuffered') {
-      statusText.textContent = `done: ${WRITES.length} operations = ${WRITES.length} syscalls`;
-      statusText.setAttribute('fill', '#e64a4a');
-    } else {
-      statusText.textContent = `done: ${WRITES.length} operations = 1 syscall`;
-      statusText.setAttribute('fill', ACCENT);
-    }
-    return;
+    statusText.setAttribute('fill', '#888');
   }
-  statusText.setAttribute('fill', '#888');
 }
 
-// 4. Event handlers
+// 4. Events
 function doStep() {
-  if (step < WRITES.length - 1) {
-    step++;
-    render();
-  } else if (playing) {
-    clearInterval(interval);
-    playing = false;
+  if (step < WRITES.length - 1) { step++; render(); }
+  else if (playing) {
+    clearInterval(interval); playing = false;
     document.getElementById('btn-play').textContent = '\u25B6 play';
     document.getElementById('btn-play').classList.remove('active');
   }
@@ -358,27 +305,18 @@ document.getElementById('btn-play').addEventListener('click', function () {
   playing = !playing;
   this.textContent = playing ? '\u23F8 pause' : '\u25B6 play';
   this.classList.toggle('active', playing);
-  if (playing) {
-    interval = setInterval(doStep, 600);
-  } else {
-    clearInterval(interval);
-  }
+  if (playing) { interval = setInterval(doStep, 600); } else { clearInterval(interval); }
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
-  step = -1;
-  playing = false;
-  clearInterval(interval);
+  step = -1; playing = false; clearInterval(interval);
   document.getElementById('btn-play').textContent = '\u25B6 play';
   document.getElementById('btn-play').classList.remove('active');
   render();
 });
 
 function setMode(m) {
-  mode = m;
-  step = -1;
-  playing = false;
-  clearInterval(interval);
+  mode = m; step = -1; playing = false; clearInterval(interval);
   document.getElementById('btn-play').textContent = '\u25B6 play';
   document.getElementById('btn-play').classList.remove('active');
   document.getElementById('btn-unbuffered').classList.toggle('active', m === 'unbuffered');
