@@ -43,7 +43,7 @@
 <body>
 <div class="widget">
   <div class="widget-title">// arrow column vector anatomy</div>
-  <div class="widget-subtitle">toggle between int and varchar to see how arrow lays out column memory</div>
+  <div class="widget-subtitle">toggle between types to see how arrow lays out column memory</div>
 
   <svg id="main-svg" viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg">
     <g id="content"></g>
@@ -52,12 +52,14 @@
   <div class="controls">
     <button id="btn-int" class="active">IntVector</button>
     <button id="btn-varchar">VarCharVector</button>
+    <button id="btn-list">ListVector</button>
   </div>
   <div class="legend">
     <div><span class="legend-dot" id="dot-valid"></span> valid value</div>
     <div><span class="legend-dot" style="background:#e64a4a"></span> null</div>
     <div><span class="legend-dot" id="dot-buffer"></span> data buffer</div>
     <div><span class="legend-dot" style="background:#4a9ee6"></span> offset buffer</div>
+    <div><span class="legend-dot" id="dot-child"></span> child vector</div>
   </div>
 </div>
 <script>
@@ -85,6 +87,7 @@ document.documentElement.style.setProperty('--w-accent', ACCENT);
 
 document.getElementById('dot-valid').style.background = ACCENT;
 document.getElementById('dot-buffer').style.background = ACCENT_DIM;
+document.getElementById('dot-child').style.background = ACCENT_SOFT;
 
 // Data
 const INT_DATA = {
@@ -102,6 +105,15 @@ const VARCHAR_DATA = {
   offsets: [0, 3, 8, 8, 10, 14],
   dataChars: 'abchellogorust',
   charRanges: [[0,3], [3,8], null, [8,10], [10,14]]
+};
+
+const LIST_DATA = {
+  name: 'tags (ListVector)',
+  values: ['[1,2,3]', '[4,5]', 'null', '[6]', '[7,8,9]'],
+  bitmap: [1, 1, 0, 1, 1],
+  offsets: [0, 3, 5, 5, 6, 9],
+  childValues: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  childRanges: [[0,3], [3,5], null, [5,6], [6,9]]
 };
 
 let mode = 'int';
@@ -238,7 +250,7 @@ function render() {
       fill: '#888', size: '11'
     });
 
-  } else {
+  } else if (mode === 'varchar') {
     svg.setAttribute('viewBox', '0 0 720 360');
 
     addText(content, 360, 18, VARCHAR_DATA.name, { fill: ACCENT, size: '12' });
@@ -312,22 +324,90 @@ function render() {
     addText(content, 360, statusY + 22, 'variable width: offsets mark where each value starts and ends', {
       fill: '#888', size: '11'
     });
+
+  } else if (mode === 'list') {
+    svg.setAttribute('viewBox', '0 0 720 360');
+
+    addText(content, 360, 18, LIST_DATA.name, { fill: ACCENT, size: '12' });
+
+    // Values
+    const y1 = 30;
+    drawRow(y1, 'VALUES', LIST_DATA.values.map(v => v === null ? 'null' : v), {
+      nullIdx: [2], highlightIdx: [0,1,3,4], highlightStroke: ACCENT, highlightText: ACCENT,
+      strikethrough: true
+    });
+
+    const sepY = y1 + CELL_H + 10;
+    addText(content, 360, sepY + 6, '\u2193  in memory  \u2193', { fill: '#444', size: '10' });
+
+    // Bitmap
+    const y2 = sepY + ROW_GAP;
+    addText(content, 360, y2 - 4, 'VALIDITY BITMAP', { fill: '#555', size: '10' });
+    drawRow(y2, 'BITMAP', LIST_DATA.bitmap.map(String), {
+      nullIdx: [2], highlightIdx: [0,1,3,4], cellW: CELL_W, fontSize: '14'
+    });
+
+    // Offsets
+    const y3 = y2 + CELL_H + ROW_GAP;
+    addText(content, 360, y3 - 4, 'OFFSET BUFFER (n+1 entries, indexes into child)', { fill: '#555', size: '10' });
+    const offsetCellW = 62;
+    drawRow(y3, 'OFFSETS', LIST_DATA.offsets.map(String), {
+      cellW: offsetCellW, stroke: '#4a9ee6', fill: 'none',
+      textFill: '#4a9ee6', highlightIdx: [], fontSize: '14'
+    });
+
+    // Child vector values
+    const y4 = y3 + CELL_H + ROW_GAP;
+    addText(content, 360, y4 - 4, 'CHILD VECTOR (IntVector, packed elements)', { fill: '#555', size: '10' });
+    const childW = 52;
+    const ranges = LIST_DATA.childRanges;
+
+    for (let i = 0; i < LIST_DATA.childValues.length; i++) {
+      const cx = START_X + i * (childW + GAP);
+      let color = ACCENT_DIM, fill = ACCENT_FILL_DARK, textColor = ACCENT_SOFT;
+
+      content.appendChild(makeSvgEl('rect', {
+        x: cx, y: y4, width: childW, height: CELL_H, rx: 3,
+        fill, stroke: color, 'stroke-width': 1
+      }));
+      addText(content, cx + childW / 2, y4 + CELL_H / 2 + 5, String(LIST_DATA.childValues[i]), {
+        fill: textColor, size: '14'
+      });
+    }
+
+    // Brackets
+    const bracketLabels = ['[1,2,3]', '[4,5]', null, '[6]', '[7,8,9]'];
+    for (let v = 0; v < ranges.length; v++) {
+      if (ranges[v] === null) continue;
+      const x1 = START_X + ranges[v][0] * (childW + GAP);
+      const x2 = START_X + (ranges[v][1] - 1) * (childW + GAP) + childW;
+      drawBracket(x1, x2, y4, bracketLabels[v], ACCENT);
+    }
+
+    // Status
+    const statusY = y4 + CELL_H + 28;
+    content.appendChild(makeSvgEl('rect', {
+      x: 40, y: statusY, width: 640, height: 36, rx: 3,
+      fill: 'none', stroke: '#222', 'stroke-width': 1
+    }));
+    addText(content, 360, statusY + 22, 'nested: offsets index into a child vector that holds all elements', {
+      fill: '#888', size: '11'
+    });
   }
 }
 
 // Events
-document.getElementById('btn-int').addEventListener('click', function () {
-  mode = 'int';
-  this.classList.add('active');
-  document.getElementById('btn-varchar').classList.remove('active');
+const buttons = { int: document.getElementById('btn-int'), varchar: document.getElementById('btn-varchar'), list: document.getElementById('btn-list') };
+function setMode(m) {
+  mode = m;
+  for (const [k, btn] of Object.entries(buttons)) {
+    btn.classList.toggle('active', k === m);
+  }
   render();
-});
-document.getElementById('btn-varchar').addEventListener('click', function () {
-  mode = 'varchar';
-  this.classList.add('active');
-  document.getElementById('btn-int').classList.remove('active');
-  render();
-});
+}
+buttons.int.addEventListener('click', () => setMode('int'));
+buttons.varchar.addEventListener('click', () => setMode('varchar'));
+buttons.list.addEventListener('click', () => setMode('list'));
 
 render();
 </script>
