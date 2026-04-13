@@ -28,9 +28,9 @@ What follows is every trap I hit across both layers. Most of them only surfaced 
 
 ## The mmap mirage
 
-Before I even got to the real problems I lost time to a wrong assumption. Arrow talks a lot about memory-mapped I/O, zero-copy reads off disk, mmap as a first-class citizen. I went in expecting to back my readers and writers with `MappedByteBuffer`s and get that path for free.
+Before I even got to the real problems I lost time chasing a wrong assumption. Arrow talks a lot about memory-mapped I/O and zero-copy reads off disk, so I went in expecting to back my readers and writers with `MappedByteBuffer`s and get that path for free.
 
-That story is true for the Python API. [PyArrow](https://arrow.apache.org/docs/python/) has clean, well-supported mmap integration. The Java API does not. There is no built-in mmap-backed reader or writer in Arrow's Java libraries and the capability just isn't there.
+That story is true if you're using [PyArrow](https://arrow.apache.org/docs/python/), which has clean and well-supported mmap integration. But the Java API simply doesn't have a built-in mmap-backed reader or writer and the capability just isn't there.
 
 So I tried building it myself. Backed the write channel with `MappedByteBuffer`s from `FileChannel.map()`. It worked, but it was also brutally slow. Arrow's IPC format issues many small irregular writes: metadata blocks, record batch headers, body buffers, dictionary blocks, the footer. `MappedByteBuffer` is not designed for that access pattern. You're paying page fault overhead on every small write and the OS page cache strategy doesn't line up well with Arrow's write sequencing. The throughput was significantly worse than a properly buffered `FileOutputStream`, so I abandoned mmap on the write path entirely.
 
@@ -48,7 +48,7 @@ The lesson was that the same I/O strategy can be terrible or excellent depending
 
 ## What the buffered writer does
 
-Arrow's IPC writer is chatty. A single `writeBatch()` call doesn't produce one contiguous write to disk. It emits a metadata block, then the record batch body, which is itself a sequence of buffers: one per column, plus validity bitmaps, plus offset buffers for variable-width types, then alignment padding. At the end of the file there's a footer with the schema and block index. Each of these is a separate write call to the underlying channel.
+I didn't realize how chatty Arrow's IPC writer actually is until I looked at what a single `writeBatch()` call does under the hood. It doesn't produce one contiguous write to disk. It emits a metadata block, then the record batch body which is itself a sequence of buffers: one per column, plus validity bitmaps, plus offset buffers for variable-width types, then alignment padding. At the end of the file there's a footer with the schema and block index. Each of these is a separate write call to the underlying channel.
 
 Through a raw `FileOutputStream`, every one of those writes becomes a system call. The OS gets hit with dozens of small writes per batch, some of them a handful of bytes for alignment padding. That is a lot of kernel transitions for data that's going to the same file anyway.
 
@@ -88,9 +88,9 @@ That's not because compression was unavailable. It's because for this use case, 
 
 ## Arrow is not row serialization with better marketing
 
-First thing I had to unlearn: thinking of Arrow as a fancier way to serialize rows. If you approach it that way the code still compiles but your design instincts are just wrong.
+The first thing I had to unlearn was thinking of Arrow as a fancier way to serialize rows. If you approach it that way the code still compiles but your design instincts end up fighting the format at every turn.
 
-Arrow's model is genuinely columnar. A batch of data is a `VectorSchemaRoot`, a collection of `FieldVector`s with one per column. The natural rhythm is to fill all values for column A, then all values for column B, not push row objects through one at a time. When you fight that model with row-by-row logic in the hot path, Arrow lets you do it and then quietly makes you pay at scale.
+Arrow is genuinely columnar. A batch of data is a `VectorSchemaRoot` which is a collection of `FieldVector`s with one per column. The natural rhythm is to fill all values for column A then all values for column B, not push row objects through one at a time. I started with row-by-row logic in the hot path because it felt natural and Arrow let me do it, but it quietly made me pay at scale.
 
 The first design decision that reflected this properly was splitting sort columns and non-sort columns into separate `VectorSchemaRoot`s. The immediate benefit was cleaner sorting since narrower schemas are easier to reason about and less likely to corrupt unrelated fields when you permute rows to reorder them.
 
@@ -175,9 +175,9 @@ None of these individually sounds like much. Together they're the difference bet
 
 ## The root allocator problem
 
-Arrow's Java library manages all its off-heap memory through a `RootAllocator`. You create one, give it a byte limit and every `FieldVector`, every `VectorSchemaRoot`, every buffer allocation draws from that pool.
+Arrow's Java library manages all its off-heap memory through a `RootAllocator` where you create one with a byte limit and every `FieldVector`, every `VectorSchemaRoot` and every buffer allocation draws from that pool.
 
-The problem is that the limit you set at construction time is the limit you're stuck with. `RootAllocator` cannot be resized at runtime. You can't grow it when load increases and you can't shrink it when you're done with a heavy phase. You pick a number at init time and that number is your ceiling forever.
+The thing I didn't expect is that the limit you set at construction time is the limit you're stuck with forever. `RootAllocator` cannot be resized at runtime so you can't grow it when load increases or shrink it when you're done with a heavy phase. You pick a number at init time and hope you got it right.
 
 Get it wrong and you hit one of two failure modes. Too low and you get `OutOfMemoryException`s from Arrow's own accounting, not the JVM heap. Too high and you've reserved off-heap memory the JVM thinks is available for other things, which can cause pressure elsewhere.
 
@@ -191,9 +191,9 @@ The rule that emerged was simple: be conservative on initial sizing, instrument 
 
 ## Sorting
 
-Sorting Arrow-backed data is where this project became genuinely difficult. A sorted pipeline has to keep memory bounded *and* present rows in the right global order and those two goals fight each other constantly.
+Sorting is where this project became genuinely difficult. A sorted pipeline has to keep memory bounded *and* present rows in the right global order and those two goals fight each other constantly.
 
-The writer side needed a sort strategy that didn't spend unnecessary time touching full rows. Compute order on the captured sort values, then apply the resulting indices across both vector roots. Two levels of parallelism made this tractable. First the sort indices themselves are computed with `Arrays.parallelSort(...)`, then the actual permutation is applied to both roots concurrently:
+On the writer side I needed a sort strategy that didn't spend unnecessary time touching full rows. The idea was to compute order on the captured sort values and then apply the resulting indices across both vector roots. Two levels of parallelism made this tractable: first the sort indices themselves are computed with `Arrays.parallelSort(...)` and then the actual permutation is applied to both roots concurrently:
 
 ```java
 private void sortAllColumns() {
@@ -206,9 +206,9 @@ private void sortAllColumns() {
 }
 ```
 
-Compute order once on the lightweight structure, apply it to both column groups concurrently. Arrow's columnar layout makes in-place permutation efficient because you're operating on column buffers, not row objects.
+The key insight is that you compute order once on the lightweight sort-only structure and apply it to both column groups concurrently. Arrow's columnar layout makes in-place permutation efficient because you're operating on column buffers, not row objects.
 
-**Type-specialized comparison** mattered a lot here. The sorted reader doesn't treat comparison as a generic "let Java figure it out" problem. It has explicit comparison logic for `Integer`, `Long`, `Float`, `Double`, `Text` and `String`. The `Text` comparator goes character by character on the raw representation to avoid materializing Java strings at all:
+**Type-specialized comparison** mattered a lot here too. Instead of treating comparison as a generic "let Java figure it out" problem, I wrote explicit comparison logic for `Integer`, `Long`, `Float`, `Double`, `Text` and `String`. The `Text` comparator goes character by character on the raw representation to avoid materializing Java strings at all:
 
 ```java
 private int compareBetweenText(Text cmp1, Text cmp2) {
@@ -227,11 +227,11 @@ If a comparison can be done without allocating strings, without routing through 
 
 ## The read side
 
-Everything above was about discipline. The read side introduced a different category of problem: **state management under bounded memory** with correctness invariants that span batch boundaries.
+Everything I described so far was about discipline on the write path. The read side introduced a completely different category of problem: **state management under bounded memory** where correctness invariants span batch boundaries.
 
-The sorted merge drove this complexity. Multiple sorted Arrow files need to merge into one globally ordered stream. The natural algorithm is a min-heap: seed it with the first element from each file, pull the minimum, advance that file's pointer, push the next candidate back into the heap. That works cleanly when everything fits in memory.
+The sorted merge is what drove most of this complexity. I needed to merge multiple sorted Arrow files into one globally ordered stream and the natural algorithm for that is a min-heap where you seed it with the first element from each file, pull the minimum, advance that file's pointer and push the next candidate back into the heap. That works cleanly when everything fits in memory.
 
-The constraint was that it had to work when everything did not fit in memory. Each file could only keep a limited window of rows resident. When a window ran out, the next window had to load from disk without disrupting the global ordering the heap was maintaining. That requirement touched nearly everything: batch loading, heap seeding, pointer advancement, cache maintenance and edge cases around rewinds and partial batches.
+The constraint I was working under was that everything did not fit in memory. Each file could only keep a limited window of rows resident. When a window ran out, the next window had to load from disk without disrupting the global ordering the heap was maintaining. That requirement touched nearly everything: batch loading, heap seeding, pointer advancement, cache maintenance and edge cases around rewinds and partial batches.
 
 <iframe src="/widgets/arrow-perf/sorted-merge.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
@@ -267,7 +267,7 @@ Once I already know how nulls are represented and reconstructed because I built 
 
 This was one of the more instructive interactions between correctness and performance in the whole project.
 
-`VectorSchemaRoot.getFieldVectors()` is not free. Calling it every row in a tight read loop is measurable. The obvious optimization is to resolve the list once and pass it around:
+I discovered that `VectorSchemaRoot.getFieldVectors()` is not free and calling it every row in a tight read loop adds up to measurable overhead. The obvious optimization was to resolve the list once and pass it around:
 
 ```java
 // before — resolves on every row
@@ -295,7 +295,7 @@ This is a very Arrow-shaped failure. The optimization is valid but the assumptio
 
 ## The string decoding trap
 
-Arrow's `VarCharVector.getObject()` returns an Arrow `Text` object, not a Java `String`. Calling `.toString()` on a `Text` looks natural but it's more work than the name suggests. Internally Arrow constructs the `Text` representation then serializes it back through `new String(bytes)` with extra indirection along the way.
+I found out the hard way that Arrow's `VarCharVector.getObject()` returns an Arrow `Text` object, not a Java `String`. Calling `.toString()` on a `Text` looks natural but it's doing more work than the name suggests because internally Arrow constructs the `Text` representation and then serializes it back through `new String(bytes)` with extra indirection along the way.
 
 On dense string columns at high throughput, this shows up in flame graphs. The bypass is to skip the intermediate representation entirely:
 
@@ -325,11 +325,11 @@ One allocation per loop instead of one per row. This kind of change doesn't show
 
 ## Memory pressure lives off heap
 
-The deeper I got into bounded memory reads, the more I had to reckon with where Arrow's memory actually lives. Most of it is off heap. Your heap metrics look calm while Arrow's buffer allocations are the real pressure and standard GC intuition gets you about halfway.
+The deeper I got into bounded memory reads, the more I had to reckon with where Arrow's memory actually lives. Most of it is off heap, which means your heap metrics look calm while Arrow's buffer allocations are the real pressure and standard GC intuition only gets you about halfway.
 
 Variable-width columns like strings and byte arrays are the worst offenders. Buffers grow unpredictably and reloads cost more. The difference between tight windowing and sloppy windowing shows up most dramatically there. The hot stack traces kept pointing at `BaseVariableWidthVector.copyFromSafe(...)` while loading the next batch of sorted data. The expensive part wasn't just reading another window, it was materializing that window for variable-width data while earlier buffers were still alive.
 
-`VectorSchemaRoot.slice()` looked appealing as a logical view over an already-loaded batch portion. It is not a free view. Under the hood it goes through `splitAndTransfer`, which allocates new vectors. Used carelessly it manufactures more memory pressure and bets that old allocations get released in time.
+I also tried `VectorSchemaRoot.slice()` thinking it would give me a cheap logical view over an already-loaded batch portion, but it turns out that under the hood it goes through `splitAndTransfer` which allocates new vectors. Used carelessly it manufactures more memory pressure and bets that old allocations get released in time.
 
 At one point I still saw Arrow OOMs even after reducing `rowsPerLoad` to 10K and increasing buffer capacity to 8 GB. The problem wasn't just batch size. The deeper issue was resource lifetime and reload behavior.
 
@@ -351,7 +351,7 @@ The other thing that helped a lot was going straight into Arrow's codebase. A fe
 
 ## The dumb mistakes
 
-Some problems in this project were subtle interactions between correctness and performance. This one was just wrong.
+Some problems in this project were subtle interactions between correctness and performance, but this one was just me being wrong.
 
 **Batch size tracking.** The writer needs to know how big the current batch is so it knows when to flush. An early version summed `fieldVector.getBufferSize()` after every row write. Looks reasonable until you read what `getBufferSize()` actually returns: the vector's *total allocated capacity*, not the bytes this write added. Accumulate that after every row and your count grows O(n²), which means the flush threshold fires way too early and downstream behavior gets shaped by numbers that have nothing to do with reality.
 
@@ -387,6 +387,6 @@ Fewer structures, less recomputation, easier reasoning, better threshold behavio
 
 ## My take
 
-Every problem in this work had the same shape. Arrow is explicit about everything: what's materialized, what's buffered, what's cached, what becomes invalid when a batch boundary moves, what a size number actually means, where memory lives. The Java APIs don't hide complexity from you the way the Python APIs sometimes do and that's not a criticism of Arrow. The spec delivers on its promises. It's just that the Java implementation expects you to understand every detail of the contract and it will not warn you when you violate one.
+Looking back, every problem in this work had the same shape. Arrow is explicit about everything: what's materialized, what's buffered, what's cached, what becomes invalid when a batch boundary moves, what a size number actually means and where memory lives. The Java APIs don't hide complexity from you the way the Python APIs sometimes do and that's not a criticism of Arrow because the spec genuinely delivers on its promises. It's just that the Java implementation expects you to understand every detail of the contract and it will not warn you when you violate one.
 
 If you're using Arrow in Java for anything past toy examples, expect to spend time in Arrow's source code. The Javadoc tells you what methods exist. The source tells you what they actually cost.
