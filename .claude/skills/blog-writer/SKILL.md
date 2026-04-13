@@ -71,10 +71,62 @@ This is non-negotiable. Every draft must match this voice. Read the style memory
 before drafting, but here's the enforced ruleset:
 
 ### Voice
-- First person, conversational, direct
-- "I built this because...", "The first thing that broke was...", "That hypothesis was right in principle and wrong in every implementation detail."
+- First person, conversational, storytelling. Write like you're telling a colleague what happened over coffee.
+- Setups should read like personal narratives: "So in 2024, I was building..." not clinical summaries of what the system does.
 - Raw language is fine: fuck, mess, broke, prayer-based testing. Don't sanitize.
 - Dry humor. Not jokes — just honest observations that happen to be funny.
+
+### Sentence rhythm (critical)
+- **No staccato fragments.** Never write short 2-3 word declarative sentences like "Clean premise.", "All true.", "This one was just wrong.", "Arrow's IPC writer is chatty." These are the #1 style violation.
+- **Sentences should flow.** Typical sentence length is 15-30 words. Connect ideas with "because", "which means", "so", "and", "but" rather than chopping them into separate short sentences.
+- **No broken/clipped sentence pairs.** Don't state a fact in one short sentence then explain it in the next. Merge them into one flowing thought.
+- **First-person framing over declarative statements.** Prefer "I discovered that X is expensive" over "X is expensive." Prefer "The thing I didn't expect is..." over "The problem is that..."
+
+### Before/after examples
+
+These are real corrections from past sessions. Study them.
+
+**Bad — clipped declarative opener:**
+> Arrow's IPC writer is chatty. A single `writeBatch()` call doesn't produce one contiguous write to disk.
+
+**Good — conversational discovery:**
+> I didn't realize how chatty Arrow's IPC writer actually is until I looked at what a single `writeBatch()` call does under the hood. It doesn't produce one contiguous write to disk.
+
+**Bad — two disconnected facts:**
+> Mappers write Arrow files, reducers read them. Arrow has maybe the cleanest elevator pitch in all of data infra.
+
+**Good — one connected thought:**
+> I was building a custom map-reduce framework and I needed an intermediate format for shuffling data between mappers and reducers. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra.
+
+**Bad — impersonal second-person:**
+> If you approach it that way the code still compiles but your design instincts are just wrong.
+
+**Good — first-person experience:**
+> I started with row-by-row logic in the hot path because it felt natural and Arrow let me do it, but it quietly made me pay at scale.
+
+**Bad — short declarative + separate explanation:**
+> `VectorSchemaRoot.getFieldVectors()` is not free. Calling it every row in a tight read loop is measurable.
+
+**Good — connected discovery:**
+> I discovered that `VectorSchemaRoot.getFieldVectors()` is not free and calling it every row in a tight read loop adds up to measurable overhead.
+
+**Bad — staccato fragment pair:**
+> Everything above was about discipline. The read side introduced a different category of problem.
+
+**Good — flowing transition:**
+> Everything I described so far was about discipline on the write path. The read side introduced a completely different category of problem.
+
+**Bad — clinical setup:**
+> Even the basic map-reduce path was not simple. Getting Arrow to write efficiently, manage off-heap memory correctly...
+
+**Good — storytelling setup:**
+> The map-reduce path itself was already not simple. I needed Arrow to write efficiently, manage off-heap memory correctly... all of that had to work before I could even think about the next problem.
+
+**Bad — detached observation:**
+> `VectorSchemaRoot.slice()` looked appealing as a logical view. It is not a free view.
+
+**Good — personal narrative:**
+> I also tried `VectorSchemaRoot.slice()` thinking it would give me a cheap logical view over an already-loaded batch portion, but it turns out that under the hood it goes through `splitAndTransfer` which allocates new vectors.
 
 ### Structure
 - Clear `##` sections, `###` subsections
@@ -105,8 +157,13 @@ before drafting, but here's the enforced ruleset:
 - **Trim justification scaffolding.** If a decision is supported by 3 sources ("I read in guides... and on X... and leaked prompts confirmed it"), compress to the strongest one. The reader trusts you did the research.
 
 ### Opening
-Start with context and motivation. Why did the project exist? What problem was the user solving?
-The first paragraph should hook the reader with a concrete situation, not an abstract claim.
+Start with a storytelling hook that puts the reader in the moment. Not a clinical description of the system, but a personal narrative of how the project started.
+
+**Bad:** "I was building a custom map-reduce pipeline where Apache Arrow was the intermediate format. Mappers write Arrow files, reducers read them."
+
+**Good:** "So in 2024, I was building a custom map-reduce framework and I needed an intermediate format for shuffling data between mappers and reducers. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra. I read all that and thought this would be the easy part of the project. Little did I know."
+
+The opening should make the reader feel like they're hearing a story, not reading a spec.
 
 ### Ending
 End with practical takeaways, a "my take" observation, or a forward-looking statement about
@@ -217,11 +274,14 @@ When writing a multi-part series:
 ### Phase 3: Style check
 After the first draft, do a self-review against the style rules in section 3. Fix violations before
 showing to the user. Common issues to catch:
+- **Staccato fragments** — the most common violation. Scan for any sentence under 6 words that states a standalone fact. Merge it into the surrounding prose.
+- **Clipped sentence pairs** — two short sentences where the first states a fact and the second explains it. Merge with "because", "which means", "so", etc.
+- **Declarative openers** — sections starting with "X is Y." instead of "I found that X is Y" or "The thing about X is..."
+- **Clinical/impersonal tone** — "The writer supports..." vs "I tried..." or "Arrow's model is..." vs "Arrow is..."
 - Hyphens used as em-dashes
 - Colons in headings
 - Preamble or meta-commentary that crept in
 - Sections that explain "what" without "why"
-- Overly polite tone (should be raw and direct)
 - Paragraphs doing double duty (split them)
 - Same fact or observation stated twice across sections (keep the better one)
 - Recap sections that just summarize earlier narrative (cut or replace with new content)
@@ -278,7 +338,10 @@ Before presenting a draft as "ready":
 - [ ] No preamble or trailing summary
 - [ ] No dates or commit messages in prose
 - [ ] No "In this post" meta-commentary
-- [ ] Opening paragraph hooks with a concrete situation
+- [ ] No staccato fragments (scan for any standalone sentence under 6 words)
+- [ ] No clipped sentence pairs (fact + explanation as two short sentences instead of one)
+- [ ] No declarative section openers ("X is Y." — use first-person framing instead)
+- [ ] Opening paragraph reads like storytelling, not a system description
 - [ ] Every section explains WHY, not just what
 - [ ] No paragraph serves two unrelated ideas
 - [ ] No fact or observation repeated across sections
