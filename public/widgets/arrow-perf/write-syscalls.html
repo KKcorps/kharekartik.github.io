@@ -136,12 +136,14 @@ function makeSvgEl(tag, attrs) {
   return el;
 }
 
-function makeText(x, y, text, opts = {}) {
-  return makeSvgEl('text', {
+function makeText(x, y, label, opts = {}) {
+  const el = makeSvgEl('text', {
     x, y, fill: opts.fill || '#888', 'font-size': opts.size || '10',
     'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start',
     ...opts.extra || {}
   });
+  el.textContent = label;
+  return el;
 }
 
 // 3. Render
