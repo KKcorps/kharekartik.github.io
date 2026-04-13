@@ -46,7 +46,7 @@ The lesson was that the same I/O strategy can be terrible or excellent depending
 
 ---
 
-## What the buffered writer does
+## Turning thirty syscalls into one using buffers
 
 I didn't realize how chatty Arrow's IPC writer actually is until I looked at what a single `writeBatch()` call does under the hood. It doesn't produce one contiguous write to disk. It emits a metadata block, then the record batch body which is itself a sequence of buffers: one per column, plus validity bitmaps, plus offset buffers for variable-width types, then alignment padding. At the end of the file there's a footer with the schema and block index. Each of these is a separate write call to the underlying channel.
 
@@ -263,7 +263,7 @@ Once I already know how nulls are represented and reconstructed because I built 
 
 ---
 
-## The field vector caching problem
+## When faster means silently wrong
 
 This was one of the more instructive interactions between correctness and performance in the whole project.
 
@@ -293,7 +293,7 @@ This is a very Arrow-shaped failure. The optimization is valid but the assumptio
 
 ---
 
-## The string decoding trap
+## The hidden cost of .toString()
 
 I found out the hard way that Arrow's `VarCharVector.getObject()` returns an Arrow `Text` object, not a Java `String`. Calling `.toString()` on a `Text` looks natural but it's doing more work than the name suggests because internally Arrow constructs the `Text` representation and then serializes it back through `new String(bytes)` with extra indirection along the way.
 
