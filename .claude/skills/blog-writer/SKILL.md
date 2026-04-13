@@ -173,6 +173,26 @@ Start with a storytelling hook that puts the reader in the moment. Not a clinica
 
 The opening should make the reader feel like they're hearing a story, not reading a spec.
 
+### Setup sections
+Setup sections should be simple and narrative. Their job is to orient the reader on what the project was and why it was hard, not to preview every technical detail that comes later.
+
+**Bad — front loading jargon:**
+> The map reduce path itself was already not simple. I needed Arrow to write efficiently, manage off heap memory correctly, avoid per row overhead in tight loops and handle nulls in a columnar format that doesn't let you bluff through the semantics. The write path, the buffered I/O, the allocator sizing, the type specialized codecs, all of that had to work before sorting even entered the picture.
+>
+> On top of that, the outputs could be sorted. That added an entirely separate layer of complexity: bounded memory windows, heap based merging, lookahead across batch boundaries, cache invalidation on reload.
+
+This overwhelms the reader with terms (bounded memory windows, heap based merging, lookahead, cache invalidation) that mean nothing until they've read the later sections. It also reads like a table of contents, not a story.
+
+**Good — simple and narrative:**
+> Just getting Arrow to read and write correctly was already a full project. The Java APIs don't hold your hand the way PyArrow does, so I had to figure out a lot of things the hard way: how to write efficiently, how to manage memory that lives outside the JVM heap and how to avoid sneaking per row overhead into what's supposed to be a columnar format.
+>
+> And then there was sorting. The outputs could be sorted, which meant reducers sometimes needed to merge several sorted files into one globally ordered stream without loading everything into memory. That added a completely separate layer of complexity on top of what was already not simple.
+
+Rules for setup sections:
+- **Don't preview technical details.** If a concept has its own section later, don't name it in the setup. Just hint at the difficulty.
+- **Keep it to two layers.** "Here's what the project was" and "here's why it was harder than expected." That's enough.
+- **Use plain language.** "memory that lives outside the JVM heap" instead of "off heap memory management". The reader doesn't have context for jargon yet.
+
 ### Ending
 End with practical takeaways, a "my take" observation, or a forward-looking statement about
 what's next. For multi-part: tease the next part's scope. No recap of what was covered.
