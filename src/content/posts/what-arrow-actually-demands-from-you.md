@@ -1,7 +1,7 @@
 ---
 title: "How I Performance Maxxed Apache Arrow for Map Reduce"
 summary: "The art of removing costs you didn't know you were paying on every row."
-publishedOn: 2026-04-12
+publishedOn: 2025-08-12
 draft: false
 tags:
   - distributed-systems
