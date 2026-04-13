@@ -110,7 +110,7 @@ That's a real optimization. It shrinks the null metadata per row, avoids repeati
 
 ---
 
-## The per-row tax problem
+## Death by a thousand casts
 
 Once the structure was right, the next class of problems came from a different place: small assumptions that looked harmless in isolation and turned out to be very much not harmless when multiplied by millions of rows.
 
