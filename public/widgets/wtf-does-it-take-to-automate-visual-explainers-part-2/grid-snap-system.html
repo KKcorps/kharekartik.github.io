@@ -345,19 +345,20 @@ function showGhost(rawSvgX, rawSvgY, snapSvgX, snapSvgY) {
   ghostLayer.appendChild(ghost);
 
   // Line from ghost to snap position
+  let snapLine = null;
   const dx = snapSvgX - rawSvgX;
   const dy = snapSvgY - rawSvgY;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist > 1) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', rawSvgX);
-    line.setAttribute('y1', rawSvgY);
-    line.setAttribute('x2', snapSvgX);
-    line.setAttribute('y2', snapSvgY);
-    line.setAttribute('stroke', '#333');
-    line.setAttribute('stroke-width', '0.8');
-    line.setAttribute('stroke-dasharray', '2 2');
-    ghostLayer.appendChild(line);
+    snapLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    snapLine.setAttribute('x1', rawSvgX);
+    snapLine.setAttribute('y1', rawSvgY);
+    snapLine.setAttribute('x2', snapSvgX);
+    snapLine.setAttribute('y2', snapSvgY);
+    snapLine.setAttribute('stroke', '#333');
+    snapLine.setAttribute('stroke-width', '0.8');
+    snapLine.setAttribute('stroke-dasharray', '2 2');
+    ghostLayer.appendChild(snapLine);
   }
 
   // Fade out ghost
@@ -365,9 +366,9 @@ function showGhost(rawSvgX, rawSvgY, snapSvgX, snapSvgY) {
   ghostTimeout = setTimeout(() => {
     ghost.style.transition = 'opacity 0.6s ease-out';
     ghost.setAttribute('opacity', '0');
-    if (line) {
-      line.style.transition = 'opacity 0.6s ease-out';
-      line.setAttribute('opacity', '0');
+    if (snapLine) {
+      snapLine.style.transition = 'opacity 0.6s ease-out';
+      snapLine.setAttribute('opacity', '0');
     }
     setTimeout(() => { ghostLayer.innerHTML = ''; }, 700);
   }, 800);

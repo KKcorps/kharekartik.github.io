@@ -111,10 +111,10 @@ const nodesExplanatory = [
 ];
 
 // ── Layout constants ──
-const nodeW = 110;
+const nodeW = 100;
 const nodeH = 55;
-const startX = 38;
-const gapX = 24;
+const startX = 30;
+const gapX = 40;
 const nodeY = 120;
 const totalPipelineW = 5 * nodeW + 4 * gapX;
 
@@ -193,7 +193,7 @@ function render() {
 
   // ── Direction arrow label ──
   const flowLabel = el('text', {
-    x: startX, y: nodeY - 18,
+    x: startX + 2, y: nodeY - 18,
     fill: isSpatial ? '#333' : '#555', 'font-size': '9', 'font-family': 'IBM Plex Mono'
   });
   flowLabel.textContent = 'data flow \u2192';
@@ -265,7 +265,7 @@ function render() {
   }
 
   // ── Audit panel ──
-  const panelX = 502;
+  const panelX = 500;
   const panelY = 225;
   const panelW = 206;
   const panelH = 100;
@@ -319,11 +319,11 @@ function render() {
   });
 
   // ── Status summary (bottom-left) ──
-  const summX = 38;
+  const summX = 30;
   const summY = 246;
 
   const summBg = el('rect', {
-    x: summX, y: summY - 18, width: 430, height: 78, rx: 3,
+    x: summX, y: summY - 18, width: 440, height: 78, rx: 3,
     fill: '#0d0d0d', stroke: '#222', 'stroke-width': '1'
   });
   scene.appendChild(summBg);
@@ -420,21 +420,25 @@ function startDots() {
     });
     scene.appendChild(dot);
 
-    const dotObj = { el: dot, x: x1, targetX: x2, speed: 1.2 + Math.random() * 0.6 };
+    const dotObj = { el: dot, x: x1, targetX: x2, speed: 0.5 + Math.random() * 0.3 };
     dots.push(dotObj);
-  }, 300);
+  }, 250);
 
   // Move dots via requestAnimationFrame
+  let animFrame;
   function moveDots() {
     for (let i = dots.length - 1; i >= 0; i--) {
       const d = dots[i];
       d.x += d.speed;
       d.el.setAttribute('cx', d.x);
 
-      // Fade as approaching target
-      const progress = (d.x - (d.targetX - 22)) / 22;
-      if (progress > 0) {
-        d.el.setAttribute('opacity', Math.max(0, 1 - progress).toFixed(2));
+      // Fade in at start, fade out near end
+      const totalDist = d.targetX - (nodeX(0) + nodeW + 2); // normalize
+      const traveled = d.x - (d.targetX - gapX + 2);
+      const fadeZone = gapX * 0.4;
+      if (traveled > gapX - fadeZone) {
+        const fade = 1 - (traveled - (gapX - fadeZone)) / fadeZone;
+        d.el.setAttribute('opacity', Math.max(0, fade).toFixed(2));
       }
 
       if (d.x >= d.targetX) {
@@ -442,9 +446,11 @@ function startDots() {
         dots.splice(i, 1);
       }
     }
-    if (dotInterval) requestAnimationFrame(moveDots);
+    if (dotInterval) {
+      animFrame = requestAnimationFrame(moveDots);
+    }
   }
-  requestAnimationFrame(moveDots);
+  animFrame = requestAnimationFrame(moveDots);
 }
 
 // ── Controls ──

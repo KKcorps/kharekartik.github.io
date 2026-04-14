@@ -103,80 +103,92 @@ const nodeLabels = ['Sprite A', 'Sprite B', 'Sprite C', 'HUD Bar', 'Score', 'Tim
 
 // ── Freehand states: each step is an array of 6 {x,y} positions ──
 // Overlaps are pairs of node indices that overlap at each step
+// Node size: 100w x 50h. Canvas: x=60..660, y=20..270
+// Overlap = rects share area (x ranges and y ranges both intersect)
 const freehandSteps = [
   {
-    // Step 0: initial — 2 overlapping pairs: (A,B) and (D,E)
+    // Step 0: initial layout — 2 overlap pairs
+    // A(80,40) right=180; B(140,55) left=140 < 180, top=55 < 90 => overlap
+    // D(350,150) right=450; E(400,160) left=400 < 450, top=160 < 200 => overlap
     pos: [
-      { x: 90,  y: 55 },   // A
-      { x: 150, y: 70 },   // B — overlaps A
-      { x: 310, y: 50 },   // C
-      { x: 400, y: 140 },  // D (HUD Bar)
-      { x: 440, y: 155 },  // E (Score) — overlaps D
-      { x: 540, y: 100 },  // F (Timer)
+      { x: 80,  y: 40 },   // A
+      { x: 140, y: 55 },   // B — overlaps A
+      { x: 300, y: 38 },   // C — safe
+      { x: 350, y: 150 },  // D (HUD Bar)
+      { x: 400, y: 160 },  // E (Score) — overlaps D
+      { x: 540, y: 95 },   // F (Timer) — safe
     ],
     overlaps: [[0,1],[3,4]],
     status: 'layout audit: 2 overlaps detected',
     desc: 'initial placement'
   },
   {
-    // Step 1: agent nudges A right by 30px to fix overlap with B
-    // A now collides with C's label area
+    // Step 1: agent nudges A right to clear B. A(210,40) right=310.
+    // But C is at (300,38) left=300 < 310, top=38 < 90 => A overlaps C!
+    // A no longer overlaps B: A(210,40) B(140,55) — A left=210 > B right=240? No:
+    //   B right = 140+100 = 240 > A left 210. B bottom = 55+50=105 > A top 40. Still overlap!
+    // Fix: move B down so it doesn't overlap A anymore.
+    // A(210,40): bottom=90. B(140,95): top=95 > 90 => no overlap. Good.
     pos: [
-      { x: 120, y: 55 },   // A nudged right
-      { x: 150, y: 70 },   // B
-      { x: 210, y: 50 },   // C — now A's right edge near C's left
-      { x: 400, y: 140 },  // D
-      { x: 440, y: 155 },  // E
-      { x: 540, y: 100 },  // F
+      { x: 210, y: 40 },   // A nudged right +130px
+      { x: 140, y: 95 },   // B shifted down (agent adjusts)
+      { x: 300, y: 38 },   // C — now A right=310 > C left=300 => overlap!
+      { x: 350, y: 150 },  // D
+      { x: 400, y: 160 },  // E
+      { x: 540, y: 95 },   // F
     ],
     overlaps: [[0,2],[3,4]],
     status: 'fixed 1 overlap, created 1 new collision',
-    desc: 'nudge A right +30px'
+    desc: 'nudge A right +130px'
   },
   {
-    // Step 2: agent nudges C down by 20px to avoid A
-    // C now overlaps with D
+    // Step 2: agent nudges C down to avoid A. C(300,110) bottom=160.
+    // D is at (350,150) top=150 < C bottom=160, D left=350 < C right=400 => C overlaps D!
+    // D+E still overlap (unchanged).
     pos: [
-      { x: 120, y: 55 },   // A
-      { x: 150, y: 70 },   // B
-      { x: 210, y: 110 },  // C nudged down — now overlaps D
-      { x: 400, y: 140 },  // D
-      { x: 440, y: 155 },  // E
-      { x: 540, y: 100 },  // F
+      { x: 210, y: 40 },   // A
+      { x: 140, y: 95 },   // B
+      { x: 300, y: 110 },  // C nudged down +72px — now overlaps D
+      { x: 350, y: 150 },  // D — C right=400 > D left=350, C bot=160 > D top=150
+      { x: 400, y: 160 },  // E
+      { x: 540, y: 95 },   // F
     ],
     overlaps: [[2,3],[3,4]],
     status: 'fixed 1 collision, created 1 new overlap',
-    desc: 'nudge C down +20px'
+    desc: 'nudge C down +72px'
   },
   {
-    // Step 3: agent nudges D left to avoid C and E
-    // D goes partially off-canvas (left edge at x=30, canvas starts at 60)
+    // Step 3: agent nudges D left to clear C and E.
+    // D(20,150) — left edge 20, canvas starts at 60 => clipped!
+    // D no longer overlaps C or E (too far left).
     pos: [
-      { x: 120, y: 55 },   // A
-      { x: 150, y: 70 },   // B
-      { x: 210, y: 110 },  // C
-      { x: 30,  y: 140 },  // D nudged left — clipped off-canvas!
-      { x: 440, y: 155 },  // E
-      { x: 540, y: 100 },  // F
+      { x: 210, y: 40 },   // A
+      { x: 140, y: 95 },   // B
+      { x: 300, y: 110 },  // C
+      { x: 20,  y: 150 },  // D nudged left -330px — clipped off-canvas!
+      { x: 400, y: 160 },  // E
+      { x: 540, y: 95 },   // F
     ],
     overlaps: [],
     clipped: [3],
     status: 'fixed overlap, node D clipped off-canvas',
-    desc: 'nudge D left -370px'
+    desc: 'nudge D left -330px'
   },
   {
-    // Step 4: agent nudges D back right — D overlaps E now
+    // Step 4: agent nudges D back right. D(370,160) right=470.
+    // E at (400,160) left=400 < 470 => D overlaps E again!
+    // Also B(140,95) bottom=145, C(300,110): no overlap (140+100=240 vs 300). Good.
     pos: [
-      { x: 120, y: 55 },   // A
-      { x: 150, y: 70 },   // B
-      { x: 210, y: 110 },  // C
-      { x: 400, y: 155 },  // D nudged back right — overlaps E
-      { x: 440, y: 155 },  // E
-      { x: 540, y: 100 },  // F
+      { x: 210, y: 40 },   // A
+      { x: 140, y: 95 },   // B
+      { x: 300, y: 110 },  // C
+      { x: 370, y: 160 },  // D nudged back right — overlaps E
+      { x: 400, y: 160 },  // E — D right=470 > E left=400, same Y
+      { x: 540, y: 95 },   // F
     ],
     overlaps: [[3,4]],
-    status: '5 steps, 2 overlaps remaining \u2014 whack-a-mole',
-    desc: 'nudge D right +370px'
+    status: '5 steps, 1 overlap remaining \u2014 whack-a-mole',
+    desc: 'nudge D right +350px'
   },
 ];
 
