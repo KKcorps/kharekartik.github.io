@@ -21,6 +21,8 @@ This post is about what happened when the agent started generating simulators fo
 
 ## Everything in one file was a terrible idea
 
+The single file approach wasn't random. I got the idea from OpenAI's own blog posts, where they published interactive artifacts as self contained HTML files on GitHub. If OpenAI was shipping single file visualizations for their blog, it seemed like a reasonable architecture for AI generated simulators. Point the agent at a blank `index.html`, let it write everything inline, open the file in a browser to see the result. Simple. Clean. No build step.
+
 The initial architecture was a single `index.html` file that loaded everything from CDN. PixiJS v8, GSAP with the PixiPlugin, Tailwind via CDN, AlpineJS for reactive controls. The entire simulator lived in one file: the DOM layout, the control panel markup, the CSS, the simulation engine, the world view, the storyboard choreography and all the GSAP timelines. A typical output looked like this at the top:
 
 ```html
@@ -174,6 +176,20 @@ CRITICAL: Common Pitfalls to Avoid
 I also included the entire PixiJS v8 documentation, all 29,000 lines of it, as a prompt guideline file. The idea was that if the model had the real API reference in context, it would stop hallucinating methods from older versions. This helped, but it also bloated the prompt significantly and I was never sure the model was actually consulting the reference versus pattern matching from its training data.
 
 On top of PixiJS itself, the agent had to coordinate multiple libraries with different conventions. PixiJS for rendering, `@pixi/layout` (Yoga based) for any CSS like container positioning, `pixi-filters` for visual effects, GSAP for animation, GSAP's PixiPlugin for bridging tween properties to Pixi display objects. Each library had its own initialization sequence, its own lifecycle, its own way of handling cleanup. A scene rebuild required killing all GSAP tweens, clearing all Pixi containers, resetting all filter state and reinitializing the application, in the right order. The agent would routinely leave zombie tweens alive after a scene reset, causing visual glitches and memory leaks that only manifested after the third or fourth play/pause cycle.
+
+---
+
+## The Pixi React migration that should have happened sooner
+
+Somewhere in the middle of all this pain I realized the single file architecture was compounding every other problem. The agent was trying to debug a 750 line HTML file where the rendering code, the state management, the animation choreography and the control panel markup were all tangled together in one giant `<script>` tag. A bug in the animation logic meant the agent had to load the entire file into context just to find the relevant function, and that context bloat was eating into the token budget it needed for actual reasoning.
+
+The fix was moving from vanilla PixiJS to **Pixi React**. Instead of one monolithic file with imperative drawing commands scattered everywhere, the simulator became a set of React components. The world view was one component. The HUD was another. The control panel was another. Each component owned its own rendering logic and its own slice of state.
+
+This made the agent's job dramatically cleaner. Instead of reading 750 lines to find a label positioning bug, the agent could read the 60 line `WorldView` component where labels actually lived. Instead of patching line 547 and hoping it didn't break line 203, the agent worked within component boundaries where the blast radius of any change was naturally contained. The debugging experience improved for the same reason component architectures always improve debugging: you don't have to load the whole file to find the problem.
+
+The code also just got shorter. React's declarative model meant the agent could express layout intent more concisely than imperative PixiJS drawing commands. A node that took 30 lines of `new PIXI.Graphics()` calls with manual positioning could be expressed as a `<Container>` with `<Graphics>` children and layout props. The agent made fewer mistakes because there was less code to get wrong.
+
+I should have made this move earlier. The single file approach worked for OpenAI's blog artifacts because those were hand authored by humans who could hold the entire file in their head. An AI agent can't do that. It works within a context window, and every line of irrelevant code in that window is a line of reasoning capacity it doesn't have. Component boundaries aren't just good software engineering. They're a form of context management for the agent.
 
 ---
 
