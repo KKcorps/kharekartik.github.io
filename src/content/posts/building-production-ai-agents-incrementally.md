@@ -21,7 +21,7 @@ Everything below came from the Pinot agent breaking in ways I hadn't imagined, f
 
 ## Start with the smallest thing that runs end to end
 
-The temptation on day zero is to build everything you think you'll eventually need. Elaborate integrations, comprehensive knowledge bases, retry logic, quality gates. This is the fastest way to waste months on problems that never materialize.
+The temptation on day zero is to build everything you think you'll eventually need. A planner that decomposes the ticket, an orchestrator routing between your skills, retry logic wrapped around every tool call and an eval harness watching the output, all wired up before a single ticket has run through the pipeline. This is the fastest way to waste weeks on problems that never materialize.
 
 Start with the absolute minimum the agent needs to complete one real run. For the Pinot agent that meant pulling a ticket, editing code, running the Maven build, running the affected tests and opening a PR. Wire those up, point Claude Code at a real bug and watch it break. Every breakage teaches you what the next piece of tooling needs to be, grounded in a problem that just happened rather than one you imagined. Build the tool for the problem you just hit, not the one you imagine hitting next month.
 
