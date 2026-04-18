@@ -20,7 +20,7 @@ Why am I trying to cure this now? Because my wife is the default beta tester for
 Here's the stack the agent has grown into so far in the order each layer was forced on me by a real failure. Each of those triggers is its own story which I'll cover next
 
 
-<iframe src="/widgets/building-production-ai-agents-incrementally/agent-growth-timeline.html" width="100%" height="580" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+<iframe src="/widgets/building-production-ai-agents-incrementally/agent-growth-timeline.html" width="100%" height="640" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 ---
 
@@ -106,5 +106,4 @@ None of the layers above were in the plan I started with. Each one got added bec
 
 Or a shorter path is to build the dumbest version, hand it to your wife and listen. There's no greater eval then wife bench.
 
-<blockquote class="twitter-tweet"><a href="https://x.com/difficultyang/status/2045320282198385012?s=20">https://x.com/difficultyang/status/2045320282198385012?s=20</a></blockquote>
-<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+<a href="https://x.com/difficultyang/status/2045320282198385012?s=20"><img src="/images/building-production-ai-agents-incrementally/wife-bench-tweet.png" alt="Tweet from @difficultyang: Opus 4.7 fails wife bench (wife got fed up and switched back to Sonnet)" /></a>
