@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Growth Timeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:disabled:hover { border-color: #333; color: #e0e0e0; }
+  .counter { margin-left: auto; font-size: 11px; color: #666; }
+  .counter .ac { color: var(--w-accent); }
+  .counter .warn { color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// agent growth timeline</div>
+  <div class="widget-subtitle">step forward — each stage adds the component a real failure forced</div>
+
+  <svg id="main-svg" viewBox="0 0 720 510" xmlns="http://www.w3.org/2000/svg">
+    <g id="arrows"></g>
+    <g id="boxes"></g>
+    <g id="overlays"></g>
+
+    <rect x="30" y="400" width="660" height="95" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="48" y="420" fill="#666" font-size="9" font-family="IBM Plex Mono" letter-spacing="1.5" id="info-stage">STAGE 1 / 9</text>
+    <text x="672" y="420" fill="#666" font-size="9" font-family="IBM Plex Mono" letter-spacing="1.5" text-anchor="end" id="info-status">BUILT</text>
+    <text x="48" y="443" fill="#e0e0e0" font-size="13" font-family="IBM Plex Mono" id="info-name">minimal pipeline</text>
+    <text x="48" y="464" fill="#888" font-size="10" font-family="IBM Plex Mono" id="info-trigger">trigger: day zero</text>
+    <text x="48" y="482" fill="#666" font-size="10" font-family="IBM Plex Mono" id="info-detail-1"></text>
+    <text x="48" y="496" fill="#666" font-size="10" font-family="IBM Plex Mono" id="info-detail-2"></text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&lt;- prev</button>
+    <button id="btn-next">next -&gt;</button>
+    <div class="counter" id="counter">stage <span class="ac" id="counter-val">1</span>/9 &middot; <span class="ac" id="counter-tag">built</span></div>
+  </div>
+</div>
+<script>
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const WARN = '#e6a64a';
+const WARN_FILL = '#1a1205';
+
+const comps = {
+  jira:         { x:40,  y:220, w:75,  h:44, label:'JIRA',            sub:'ticket' },
+  agent:        { x:230, y:195, w:270, h:90, label:'Claude Code',     sub:'agent' },
+  pr:           { x:580, y:220, w:75,  h:44, label:'PR',              sub:'output' },
+  slack:        { x:230, y:40,  w:70,  h:26, label:'Slack' },
+  gdocs:        { x:310, y:40,  w:70,  h:26, label:'GDocs' },
+  prcomments:   { x:390, y:40,  w:110, h:26, label:'PR comments' },
+  contextPipe:  { x:230, y:95,  w:270, h:28, label:'context pipeline' },
+  kb:           { x:40,  y:320, w:130, h:44, label:'knowledge base' },
+  clusterSkill: { x:210, y:320, w:120, h:44, label:'cluster launch',  sub:'skill' },
+  datagen:      { x:340, y:320, w:120, h:44, label:'datagen',         sub:'library' },
+  logs:         { x:480, y:320, w:175, h:44, label:'reasoning logs',  sub:'instrumentation' },
+  costRouter:   { x:275, y:150, w:180, h:26, label:'cost router' },
+  trustPackets: { x:574, y:275, w:88,  h:40, label:'trust packet',    sub:'reviewer aid' }
+};
+
+const stages = [
+  {
+    name: 'minimal pipeline',
+    status: 'built',
+    add: ['jira','agent','pr'],
+    arrows: [ ['jira','agent','r'], ['agent','pr','r'] ],
+    signal: 'day zero',
+    detail1: 'pull a ticket, edit code, run tests, open a PR. the smallest',
+    detail2: 'end-to-end loop that can actually finish a real run.'
+  },
+  {
+    name: 'knowledge base',
+    status: 'built',
+    add: ['kb'],
+    arrows: [ ['kb','agent','ne'] ],
+    signal: 'agent kept getting the tribal stuff wrong',
+    detail1: 'repo conventions, release process, where test data lives.',
+    detail2: 'none of it in any corpus. written down only after it broke.'
+  },
+  {
+    name: 'context pipeline',
+    status: 'built',
+    add: ['slack','gdocs','prcomments','contextPipe'],
+    arrows: [
+      ['slack','contextPipe','d'],
+      ['gdocs','contextPipe','d'],
+      ['prcomments','contextPipe','d'],
+      ['contextPipe','agent','d']
+    ],
+    signal: 'raw JIRA in, confident nonsense out',
+    detail1: 'pinot JIRAs are barebones. slack threads and design docs',
+    detail2: 'carry the real brief. hydrate before the agent sees it.'
+  },
+  {
+    name: 'skill: cluster launch',
+    status: 'built',
+    add: ['clusterSkill'],
+    arrows: [ ['agent','clusterSkill','d'] ],
+    signal: 'a 2 minute launch eating 20 minutes per run',
+    detail1: 'agent kept botching component order and java classpaths.',
+    detail2: 'promoted to a skill with explicit startup scripts.'
+  },
+  {
+    name: 'library: datagen',
+    status: 'built',
+    add: ['datagen'],
+    arrows: [ ['agent','datagen','d'] ],
+    signal: 'agent handrolled a generator every run',
+    detail1: 'skipped nulls, ignored multi-value, forgot JSON, no',
+    detail2: 'cardinality control for upsert tests. pulled it into a lib.'
+  },
+  {
+    name: 'reasoning logs',
+    status: 'built',
+    add: ['logs'],
+    arrows: [ ['agent','logs','d'] ],
+    signal: 'feature flag that never took effect',
+    detail1: 'tests passed green, code looked right. logs showed the flag',
+    detail2: 'was dead. green runs are not the same as correct behavior.'
+  },
+  {
+    name: 'phase split',
+    status: 'pending',
+    add: [],
+    arrows: [],
+    overlay: 'phaseSplit',
+    signal: 'tickets are small bug fixes right now',
+    detail1: 'splitting into design / plan / build is scaffolding I\'d',
+    detail2: 'normally add day one. one shot still works, so not yet.'
+  },
+  {
+    name: 'cost router',
+    status: 'pending',
+    add: ['costRouter'],
+    arrows: [ ['costRouter','agent','d'] ],
+    signal: 'correctness is not locked in',
+    detail1: 'cheaper models and prompt caching are obvious wins once',
+    detail2: 'output is trustworthy. not before. wrong answers, faster.'
+  },
+  {
+    name: 'trust packets',
+    status: 'pending',
+    add: ['trustPackets'],
+    arrows: [ ['pr','trustPackets','d'] ],
+    signal: 'no good answer yet',
+    detail1: 'how does a reviewer know the PR fixes the JIRA without',
+    detail2: 're-reading it all? no design yet. leaning on tests for now.'
+  }
+];
+
+let idx = 0;
+
+const svg = document.getElementById('main-svg');
+const arrowsG = document.getElementById('arrows');
+const boxesG = document.getElementById('boxes');
+const overlaysG = document.getElementById('overlays');
+const infoStage = document.getElementById('info-stage');
+const infoStatus = document.getElementById('info-status');
+const infoName = document.getElementById('info-name');
+const infoTrigger = document.getElementById('info-trigger');
+const infoDetail1 = document.getElementById('info-detail-1');
+const infoDetail2 = document.getElementById('info-detail-2');
+const counterVal = document.getElementById('counter-val');
+const counterTag = document.getElementById('counter-tag');
+const counter = document.getElementById('counter');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function edgePoint(c, side) {
+  const cx = c.x + c.w / 2;
+  const cy = c.y + c.h / 2;
+  switch (side) {
+    case 'l': return { x: c.x,         y: cy };
+    case 'r': return { x: c.x + c.w,   y: cy };
+    case 't': return { x: cx,          y: c.y };
+    case 'b': return { x: cx,          y: c.y + c.h };
+    case 'tl':return { x: c.x,         y: c.y };
+    case 'tr':return { x: c.x + c.w,   y: c.y };
+    case 'bl':return { x: c.x,         y: c.y + c.h };
+    case 'br':return { x: c.x + c.w,   y: c.y + c.h };
+  }
+}
+
+function drawArrow(g, from, to, color, dashed) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const tipX = to.x - ux * 1;
+  const tipY = to.y - uy * 1;
+  const lineEndX = to.x - ux * 7;
+  const lineEndY = to.y - uy * 7;
+
+  const line = svgEl('line', {
+    x1: from.x, y1: from.y, x2: lineEndX, y2: lineEndY,
+    stroke: color, 'stroke-width': 1.2
+  });
+  if (dashed) line.setAttribute('stroke-dasharray', '4,3');
+  g.appendChild(line);
+
+  const hx = ux, hy = uy;
+  const px = -uy, py = ux;
+  const baseX = tipX - hx * 7;
+  const baseY = tipY - hy * 7;
+  const p2x = baseX + px * 3.5, p2y = baseY + py * 3.5;
+  const p3x = baseX - px * 3.5, p3y = baseY - py * 3.5;
+  const tri = svgEl('polygon', {
+    points: `${tipX},${tipY} ${p2x},${p2y} ${p3x},${p3y}`,
+    fill: color
+  });
+  g.appendChild(tri);
+}
+
+function resolveArrowEndpoints(fromKey, toKey, dir) {
+  const f = comps[fromKey], t = comps[toKey];
+  if (dir === 'r') return { from: edgePoint(f,'r'), to: edgePoint(t,'l') };
+  if (dir === 'l') return { from: edgePoint(f,'l'), to: edgePoint(t,'r') };
+  if (dir === 'd') return alignX(edgePoint(f,'b'), edgePoint(t,'t'));
+  if (dir === 'u') return alignX(edgePoint(f,'t'), edgePoint(t,'b'));
+  if (dir === 'ne') {
+    return {
+      from: { x: f.x + f.w, y: f.y + f.h * 0.3 },
+      to:   { x: t.x,       y: t.y + t.h * 0.8 }
+    };
+  }
+  return { from: edgePoint(f,'r'), to: edgePoint(t,'l') };
+}
+
+function alignX(from, to) {
+  const midX = (from.x + to.x) / 2;
+  return { from: { x: midX, y: from.y }, to: { x: midX, y: to.y } };
+}
+
+function drawBox(g, comp, state) {
+  let stroke, fill, labelColor, subColor, dash = null;
+  if (state === 'current-built') {
+    stroke = ACCENT; fill = ACCENT_FILL; labelColor = ACCENT; subColor = ACCENT_MID;
+  } else if (state === 'past-built') {
+    stroke = ACCENT_DIM; fill = ACCENT_FILL_DARK; labelColor = ACCENT_MID; subColor = ACCENT_DIM;
+  } else if (state === 'current-pending') {
+    stroke = WARN; fill = 'none'; labelColor = WARN; subColor = WARN; dash = '4,3';
+  }
+
+  const rect = svgEl('rect', {
+    x: comp.x, y: comp.y, width: comp.w, height: comp.h, rx: 3,
+    fill: fill, stroke: stroke,
+    'stroke-width': state === 'current-built' ? 1.5 : 1
+  });
+  if (dash) rect.setAttribute('stroke-dasharray', dash);
+  g.appendChild(rect);
+
+  const hasSub = !!comp.sub;
+  const labelY = hasSub ? comp.y + comp.h / 2 - 3 : comp.y + comp.h / 2 + 4;
+  const label = svgEl('text', {
+    x: comp.x + comp.w / 2, y: labelY,
+    'text-anchor': 'middle',
+    'font-size': comp.h <= 30 ? 10 : 11,
+    'font-family': 'IBM Plex Mono',
+    fill: labelColor
+  });
+  label.textContent = comp.label;
+  g.appendChild(label);
+
+  if (hasSub) {
+    const sub = svgEl('text', {
+      x: comp.x + comp.w / 2, y: comp.y + comp.h / 2 + 11,
+      'text-anchor': 'middle',
+      'font-size': 9,
+      'font-family': 'IBM Plex Mono',
+      fill: subColor
+    });
+    sub.textContent = comp.sub;
+    g.appendChild(sub);
+  }
+}
+
+function render() {
+  arrowsG.innerHTML = '';
+  boxesG.innerHTML = '';
+  overlaysG.innerHTML = '';
+
+  const compState = {};
+  const arrowState = [];
+
+  for (let i = 0; i <= idx; i++) {
+    const st = stages[i];
+    const isCurrent = i === idx;
+    if (st.status === 'built') {
+      for (const c of st.add) compState[c] = isCurrent ? 'current-built' : 'past-built';
+      for (const a of st.arrows) arrowState.push({ from: a[0], to: a[1], dir: a[2], state: isCurrent ? 'current-built' : 'past-built' });
+    } else if (st.status === 'pending' && isCurrent) {
+      for (const c of st.add) compState[c] = 'current-pending';
+      for (const a of st.arrows) arrowState.push({ from: a[0], to: a[1], dir: a[2], state: 'current-pending' });
+    }
+  }
+
+  for (const a of arrowState) {
+    const eps = resolveArrowEndpoints(a.from, a.to, a.dir);
+    let color;
+    if (a.state === 'current-built') color = ACCENT;
+    else if (a.state === 'past-built') color = ACCENT_DIM;
+    else color = WARN;
+    drawArrow(arrowsG, eps.from, eps.to, color, a.state === 'current-pending');
+  }
+
+  const order = ['slack','gdocs','prcomments','contextPipe','costRouter','jira','agent','pr','trustPackets','kb','clusterSkill','datagen','logs'];
+  for (const key of order) {
+    if (compState[key]) drawBox(boxesG, comps[key], compState[key]);
+  }
+
+  const curStage = stages[idx];
+  if (curStage.overlay === 'phaseSplit' && compState['agent'] !== undefined) {
+    const a = comps.agent;
+    const seg = a.w / 3;
+    for (let i = 1; i < 3; i++) {
+      const x = a.x + seg * i;
+      const div = svgEl('line', {
+        x1: x, y1: a.y + 6, x2: x, y2: a.y + a.h - 6,
+        stroke: WARN, 'stroke-width': 1, 'stroke-dasharray': '4,3'
+      });
+      overlaysG.appendChild(div);
+    }
+    const labels = ['design','plan','build'];
+    for (let i = 0; i < 3; i++) {
+      const txt = svgEl('text', {
+        x: a.x + seg * i + seg / 2, y: a.y + a.h - 8,
+        'text-anchor': 'middle',
+        'font-size': 8, 'font-family': 'IBM Plex Mono',
+        fill: WARN
+      });
+      txt.textContent = labels[i];
+      overlaysG.appendChild(txt);
+    }
+  }
+
+  infoStage.textContent = `STAGE ${idx + 1} / 9`;
+  const pending = curStage.status === 'pending';
+  infoStatus.textContent = pending ? 'NOT YET' : 'BUILT';
+  infoStatus.setAttribute('fill', pending ? WARN : ACCENT);
+  infoName.textContent = curStage.name;
+  infoName.setAttribute('fill', pending ? WARN : ACCENT);
+  infoTrigger.textContent = (pending ? 'status: ' : 'trigger: ') + curStage.signal;
+  infoDetail1.textContent = curStage.detail1 || '';
+  infoDetail2.textContent = curStage.detail2 || '';
+
+  counterVal.textContent = idx + 1;
+  counterTag.textContent = pending ? 'not yet' : 'built';
+  counterVal.className = pending ? 'warn' : 'ac';
+  counterTag.className = pending ? 'warn' : 'ac';
+
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === stages.length - 1;
+}
+
+btnPrev.addEventListener('click', () => { if (idx > 0) { idx--; render(); } });
+btnNext.addEventListener('click', () => { if (idx < stages.length - 1) { idx++; render(); } });
+
+render();
+</script>
+</body>
+</html>
