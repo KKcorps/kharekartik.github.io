@@ -13,7 +13,7 @@ featured: false
 
 These are build notes, not a postmortem. I'm a few weeks into an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a running list of what keeps breaking and a pile of opinions I didn't have when I started. This post is the dump.
 
-The **zero shot trap** is the reflex I started with: design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage, not predicted through design.
+The **zero shot trap** is the reflex I started with: design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage not predicted through design.
 
 Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share this bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work.
 
@@ -25,7 +25,7 @@ The temptation on day zero is to build everything you think you'll eventually ne
 
 Start with the absolute minimum the agent needs to complete one real run. For the Pinot agent that meant pulling a ticket, editing code, running the Maven build, running the affected tests and opening a PR. Wire those up, point Claude Code at a real bug and watch it break. Every breakage teaches you what the next piece of tooling needs to be, grounded in a problem that just happened rather than one you imagined. Build the tool for the problem you just hit, not the one you imagine hitting next month.
 
-The clearest place I've applied this for the Pinot agent is the harness itself. My default would be to write my own agent loop, tool dispatcher and context manager from scratch because that's the kind of control I usually reach for. Instead I'm leaning on Claude Code as the harness and will only pivot to something custom when I hit a limit I can't work around. So far I haven't, and every time I catch myself reaching for custom infrastructure the question I ask is whether Claude Code already handles that part. It usually does.
+The clearest place I've applied this for the Pinot agent is the harness itself. My default would be to write my own agent loop, tool dispatcher and context manager from scratch because that's the kind of control I usually reach for. Instead I'm leaning on Claude Code as the harness and will only pivot to something custom when I hit a limit I can't work around. So far I haven't, and every time I catch myself reaching for custom infrastructure the question I ask is whether Claude Code already handles that part either via MCP, Skills or some hook. It usually does.
 
 ---
 
@@ -71,9 +71,9 @@ The rule of thumb across both flavors: if you're writing prompt text that descri
 
 As soon as a task looks complicated, the reflex is to split it into design, plan and build with review gates between each. This is the same overengineering instinct as everything else. Phases add overhead, extra artifacts to maintain and more places for context to get lost in handoff. Wait for the signal before you split.
 
-The signal that finally made me split was watching the Pinot agent spend five minutes thinking about design at the start of a run, then jump straight into implementation that turned out shoddy and kept breaking because the design hadn't actually been thought through. The run after that ended the same way. And the one after that. Splitting design into its own phase with its own artifact fixed it, because design now got uninterrupted focus and the build phase ran against a spec that had already been reviewed. The phase boundary belongs exactly where the failure keeps happening, not everywhere it might in theory.
+The Pinot agent is a case study in not splitting yet. I've had the itch a few times, especially when a run spends five minutes reasoning about design and then jumps straight into shoddy implementation that keeps breaking because the design wasn't actually thought through. But the tickets I'm feeding it are small, the kinds of pesky bug fixes and minor improvements that eat into our devs' time, not feature rewrites. For work at that size a design phase would produce an artifact nobody needs to review, and the extra handoff cost outweighs any benefit. If I ever point the agent at a full feature rewrite, I'll probably split. Right now the whole point of this agent is to take this specific category of work off devs' plates so they can spend their time on the things that actually need a design session.
 
-What took me embarrassingly long to notice is that this is just the age old exploration vs exploitation tradeoff in new clothes. Design is exploration, broad and uncertain and willing to throw away options you don't pick. Build is exploitation, narrow and committed and focused on making one path work. Jamming them into the same run means the agent tries to do both at once and does both badly.
+What took me embarrassingly long to notice is that this is just the age old exploration vs exploitation tradeoff in new clothes. Design is exploration, broad and uncertain and willing to throw away options you don't pick. Build is exploitation, narrow and committed and focused on making one path work. Jamming them into the same run means the agent tries to do both at once and does both badly. That's the cost phasing is paying to fix, and why you shouldn't reach for it until the failure is actually repeating.
 
 ---
 
