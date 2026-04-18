@@ -25,6 +25,8 @@ The temptation on day zero is to build everything you think you'll eventually ne
 
 Start with the absolute minimum the agent needs to complete one real run. For the Pinot agent that meant pulling a ticket, editing code, running the Maven build, running the affected tests and opening a PR. Wire those up, point Claude Code at a real bug and watch it break. Every breakage teaches you what the next piece of tooling needs to be, grounded in a problem that just happened rather than one you imagined. Build the tool for the problem you just hit, not the one you imagine hitting next month.
 
+The clearest place I've applied this for the Pinot agent is the harness itself. My default would be to write my own agent loop, tool dispatcher and context manager from scratch because that's the kind of control I usually reach for. Instead I'm leaning on Claude Code as the harness and will only pivot to something custom when I hit a limit I can't work around. So far I haven't, and every time I catch myself reaching for custom infrastructure the question I ask is whether Claude Code already handles that part. It usually does.
+
 ---
 
 ## Knowledge grows from doing, not planning
