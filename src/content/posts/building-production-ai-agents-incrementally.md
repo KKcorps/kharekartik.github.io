@@ -1,6 +1,6 @@
 ---
-title: "The Zero Shot Trap and How to Escape It"
-summary: "Why designing your AI agent system upfront based on theoretical problems doesn't work, and how to build one that does through incremental iteration on real usage."
+title: "Build notes: the zero shot trap"
+summary: "In-progress notes from building a JIRA-to-PR agent for Apache Pinot — the overengineering instinct I started with, the signals that told me when to add each layer, and the things I'm still figuring out."
 publishedOn: 2026-04-16
 draft: true
 tags:
@@ -11,11 +11,13 @@ tags:
 featured: false
 ---
 
-I spent the last several months building an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. I never shipped it, but I used it heavily on real tickets. I have a problem with complexity: my first instinct on any task is to design the whole system upfront, every failure mode anticipated, every layer in place before anything real runs. So that's what I did. The architecture looked beautiful on a whiteboard. Then I ran it on a real ticket and almost none of the problems I'd designed for were the problems that actually happened.
+These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while, and there are pieces I know I still need to rip out or rebuild. What I have is several months of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
+
+I have a problem with complexity: my first instinct on any task is to design the whole system upfront, every failure mode anticipated, every layer in place before anything real runs. So that's what I did. The architecture looked beautiful on a whiteboard. Then I ran it on a real ticket and almost none of the problems I'd designed for were the problems that actually happened.
 
 This is the **zero shot trap**: you design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage, not predicted through design.
 
-Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share my complexity bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work.
+Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share my complexity bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work. Take this as a snapshot, not a framework. I expect half of what's below to read differently to me in six months.
 
 ---
 
@@ -121,4 +123,4 @@ Getting other people on an agent is the force multiplier I've watched teammates 
 
 This also means the system gets better through subtraction. Steps I'd wasted the model's reasoning on early on got moved into tools. Elaborate handling for theoretical problems got ripped out. If you're only adding and never removing, you're accumulating complexity faster than you're learning from usage.
 
-The Pinot agent I use today looks nothing like the one I designed on that first whiteboard. It's the one that survived contact with real tickets, real breakages and real reruns, built one layer at a time. If you're about to start your own agent, save yourself the whiteboard.
+The Pinot agent I run today looks nothing like the one I designed on that first whiteboard. It's the one that survived contact with real tickets, real breakages and real reruns, built one layer at a time. It's still rough. There are skills I haven't extracted yet, components I know I'll need to package, and plenty of runs that still end with me pasting the error into a fresh conversation and starting over. But it works often enough to be worth running, which is more than the whiteboard version ever managed. If you're about to start your own, save yourself the whiteboard and start keeping notes like these instead.
