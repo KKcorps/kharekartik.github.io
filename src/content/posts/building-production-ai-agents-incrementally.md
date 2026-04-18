@@ -11,13 +11,13 @@ tags:
 featured: false
 ---
 
-These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while, and there are pieces I know I still need to rip out or rebuild. What I have is several months of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
+These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while, and there are pieces I know I still need to rip out or rebuild. What I have is a few weeks of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
 
 I have a problem with complexity: my first instinct on any task is to design the whole system upfront, every failure mode anticipated, every layer in place before anything real runs. So that's what I did. The architecture looked beautiful on a whiteboard. Then I ran it on a real ticket and almost none of the problems I'd designed for were the problems that actually happened.
 
 This is the **zero shot trap**: you design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage, not predicted through design.
 
-Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share my complexity bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work. Take this as a snapshot, not a framework. I expect half of what's below to read differently to me in six months.
+Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share my complexity bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work. Take this as a snapshot, not a framework. I expect half of what's below to read differently to me in a few months.
 
 ---
 
@@ -111,15 +111,15 @@ Once the logs start piling up, point Claude Code or Codex at a month of them and
 
 The signal that you're optimizing too early is catching yourself reaching for a smaller model, prompt caching or context trimming to save tokens while the agent still makes mistakes you don't fully understand. Cost and latency feel like legitimate engineering problems, but they're almost never the bottleneck that matters first. An agent that produces wrong output faster is worse, not better. Cheaper wrong output is the same story.
 
-Lock correctness first. Run the expensive model, put everything it needs in context, let it produce the right answer repeatedly. For months I ran the most capable model available on every step of the Pinot agent and didn't think about cost at all. Only once correctness was stable across dozens of tickets did I start looking at what could move to a cheaper model without regressing, and even then I kept the full logs and compared outputs side by side before making the switch. Measure where the cost is actually going and attack that specific line, not the category. Smaller models, shorter prompts and aggressive caching all work, but each one shifts behavior in ways you need your logs and your correctness baseline to catch. Without that baseline, cost optimizations silently break the system in ways you won't notice until a user points one out.
+Lock correctness first. Run the expensive model, put everything it needs in context, let it produce the right answer repeatedly. I'm still running the most capable model available on every step of the Pinot agent and haven't seriously looked at cost yet. Once correctness is stable across a larger batch of tickets I'll start looking at what could move to a cheaper model without regressing, and even then I'll want the full logs and side by side output comparisons before making the switch. Measure where the cost is actually going and attack that specific line, not the category. Smaller models, shorter prompts and aggressive caching all work, but each one shifts behavior in ways you need your logs and your correctness baseline to catch. Without that baseline, cost optimizations silently break the system in ways you won't notice until a user points one out.
 
 ---
 
 ## Use it yourself, get users, learn what actually breaks
 
-I saved this for last because it matters more than everything above it combined. I never shipped the Pinot agent. I did use it myself, on real tickets, day after day, and that alone was enough to make every lesson above go from theory to reflex. The failure modes I'd designed for barely ever showed up. The ones I never anticipated hit on every third run. Within a few weeks I had a list of issues and not a single one was on my original roadmap.
+I saved this for last because it matters more than everything above it combined. The Pinot agent isn't shipped yet, but I've been running it on real tickets myself day after day, and that alone has been enough to make every lesson above go from theory to reflex. The failure modes I'd designed for barely ever showed up. The ones I never anticipated hit on every third run. A couple of weeks in, I had a list of issues and not a single one was on my original roadmap.
 
-Getting other people on an agent is the force multiplier I've watched teammates benefit from on their own projects. It surfaces workflows and edge cases you'd never hit yourself. I didn't get the Pinot agent to that stage, but even solo use was enough to demolish the plan I'd started with.
+Getting other people on an agent is the force multiplier I've watched teammates benefit from on their own projects. It surfaces workflows and edge cases you'd never hit yourself. I haven't got the Pinot agent to that stage yet, but even solo use has been enough to demolish the plan I started with.
 
 This also means the system gets better through subtraction. Steps I'd wasted the model's reasoning on early on got moved into tools. Elaborate handling for theoretical problems got ripped out. If you're only adding and never removing, you're accumulating complexity faster than you're learning from usage.
 
