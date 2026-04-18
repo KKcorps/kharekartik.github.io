@@ -11,13 +11,11 @@ tags:
 featured: false
 ---
 
-These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a few weeks of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
+These are build notes, not a postmortem. I'm a few weeks into an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a running list of what keeps breaking and a pile of opinions I didn't have when I started. This post is the dump.
 
-I have a problem with complexity: my first instinct on any task is to design the whole system upfront, every failure mode anticipated, every layer in place before anything real runs. So that's what I did. The architecture looked beautiful on a whiteboard. Then I ran it on a real ticket and almost none of the problems I'd designed for were the problems that actually happened.
+The **zero shot trap** is the reflex I started with: design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage, not predicted through design.
 
-This is the **zero shot trap**: you design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage, not predicted through design.
-
-Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share my complexity bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work. Take this as a snapshot, not a framework. I expect half of what's below to read differently to me in a few months.
+Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share this bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work.
 
 ---
 
