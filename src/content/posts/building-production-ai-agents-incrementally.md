@@ -11,11 +11,15 @@ tags:
 featured: false
 ---
 
-These are build notes, not a postmortem. I'm a few weeks into an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a running list of what keeps breaking and a pile of opinions I didn't have when I started. This post is the dump.
+I'm a few weeks into an AI agent that takes a JIRA ticket created for our Apache Pinot repo and tries to turn it into a high grade pull request. It isn't shipped, probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a running list of what keeps breaking and a pile of opinions I didn't have when I started. This post is the dump.
 
-The **zero shot trap** is the reflex I started with: design a complex agent upfront by imagining what could go wrong and expect it to work in production. It doesn't. The complexity of a real domain is discovered through usage not predicted through design.
+Mostly what I am trying to fix in this project is my complexity bias. Most of my side projects get stuck in the **zero shot trap**. What do I mean by this? Basically, I design a complex system upfront by imagining what could go wrong. However, that reduces it utility as the experience is wired not for ease of use and getting things done but for an interesting engineering project 
 
-Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share this bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures overengineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work.
+Everything below came from the Pinot agent breaking in ways I hadn't imagined, from watching teammates who don't share this bias ship agent systems that actually work and from a few side projects where my wife was the primary user. Nothing cures over engineering faster than someone who doesn't care about your architecture telling you the thing just doesn't work.
+
+Here's the stack the agent has grown into so far, in the order each layer was forced by a real failure. Three of them are still pending because the signal hasn't arrived yet. Step through to see what triggered each one.
+
+<iframe src="/widgets/building-production-ai-agents-incrementally/agent-growth-timeline.html" width="100%" height="580" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 ---
 

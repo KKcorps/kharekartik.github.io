@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Growth Timeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:disabled:hover { border-color: #333; color: #e0e0e0; }
+  .counter {
+    margin-left: auto; font-size: 11px; color: #666;
+  }
+  .counter span { color: var(--w-accent); }
+  .counter .warn { color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// agent growth timeline</div>
+  <div class="widget-subtitle">step through the layers the agent grew, in the order each one was forced by a real failure</div>
+
+  <svg id="main-svg" viewBox="0 0 720 425" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="22" fill="#666" font-size="10" font-family="IBM Plex Mono" letter-spacing="1.5">AGENT STACK</text>
+    <text x="380" y="22" fill="#666" font-size="10" font-family="IBM Plex Mono" letter-spacing="1.5">WHAT FORCED IT</text>
+
+    <g id="stack"></g>
+    <g id="signal"></g>
+
+    <rect x="40" y="365" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="392" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">start here</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-prev">&lt;- prev</button>
+    <button id="btn-next">next -&gt;</button>
+    <div class="counter" id="counter">stage <span id="counter-val">1</span>/9</div>
+  </div>
+</div>
+<script>
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const WARN = '#e6a64a';
+
+const stages = [
+  {
+    name: 'minimal pipeline',
+    tag: 'end to end',
+    status: 'built',
+    signal: 'day zero',
+    detail: 'pull a ticket, edit code, run the build, run the tests, open a PR. wired the smallest thing that could finish one real run, then pointed claude code at a real bug to see what would break first.',
+    status_line: 'one ticket, one PR. everything else was added later.'
+  },
+  {
+    name: 'knowledge base',
+    tag: 'tribal docs',
+    status: 'built',
+    signal: 'agent kept getting the tribal stuff wrong',
+    detail: 'the public docs cover the happy path. the weird internal conventions, the release process, the reason a given module is the way it is, none of that is written down anywhere the agent could find. I started dumping that context into a knowledge base it could pull from.',
+    status_line: 'agent stops inventing conventions that do not exist.'
+  },
+  {
+    name: 'context pipeline',
+    tag: 'slack + docs + PRs',
+    status: 'built',
+    signal: 'raw JIRA in, confident nonsense out',
+    detail: 'pinot JIRAs are written as formality, not as briefs. without slack threads, design docs and prior PR comments, the agent fills the gap with plausible-sounding bullshit. most of my time is now spent on the pipeline that hydrates the ticket before the agent ever sees it.',
+    status_line: 'the brief the agent reads is not the brief the human wrote.'
+  },
+  {
+    name: 'skill: cluster launch',
+    tag: 'first skill',
+    status: 'built',
+    signal: 'a 2 minute launch was eating 20 minutes per run',
+    detail: 'the agent could eventually get a local pinot cluster up, but it kept screwing up the component launch order and java classpaths, burning 20 minutes of flailing on what should be a 2 minute task. prose instructions were not enough. I carved out a skill with the exact sequence.',
+    status_line: 'skills only get extracted after prose has visibly failed.'
+  },
+  {
+    name: 'library: datagen',
+    tag: 'stop reinventing',
+    status: 'built',
+    signal: 'agent handrolled a generator every run',
+    detail: 'every time tests needed a synthetic pinot dataset the agent wrote a new generator from scratch. it skipped nulls, ignored multi-value columns, forgot JSON and never controlled primary key cardinality for upsert tests. I pulled it out into a real library with a type matrix and cardinality flags.',
+    status_line: 'if the agent keeps rewriting it, it is not prose, it is a library.'
+  },
+  {
+    name: 'reasoning logs',
+    tag: 'first silent fail',
+    status: 'built',
+    signal: 'feature flag that never took effect',
+    detail: 'the agent made all the right code changes and the tests passed green. only when I read the logs did I see the flag it added was never coming into effect. everything was still running on the existing happy path branch. the run looked successful from outside.',
+    status_line: 'green tests are not the same as correct behavior.'
+  },
+  {
+    name: 'phase split',
+    tag: 'not yet',
+    status: 'pending',
+    signal: 'tickets are small bug fixes right now',
+    detail: 'splitting the agent into design, plan and build phases is the kind of scaffolding I would normally build on day one. with tickets this small, one shot still works and the phases would add more ceremony than value. the goal is to take pesky fixes off dev plates so they can work on full features. full feature rewrites might force this later.',
+    status_line: 'not yet. one shot works until it stops working.'
+  },
+  {
+    name: 'cost / latency tuning',
+    tag: 'not yet',
+    status: 'pending',
+    signal: 'correctness is not locked in',
+    detail: 'still running the most capable model on every step. cheaper routing, smaller context windows and prompt caching are all obvious wins once the output is trustworthy. doing them now would just make a wrong answer cheaper and faster.',
+    status_line: 'not yet. optimize the thing you trust, not the thing you hope.'
+  },
+  {
+    name: 'trust packets',
+    tag: 'not yet',
+    status: 'pending',
+    signal: 'no good answer yet',
+    detail: 'how does a reviewer know this PR actually fixes the JIRA without re-reading everything themselves? reasoning traces, linked context, before/after test output, something packaged alongside the diff. I do not have a design for this yet. for now I lean on tests and read the diff myself.',
+    status_line: 'not yet. leaning on tests and manual review.'
+  }
+];
+
+let idx = 0;
+
+const svg = document.getElementById('main-svg');
+const stackG = document.getElementById('stack');
+const signalG = document.getElementById('signal');
+const statusText = document.getElementById('status-text');
+const counterVal = document.getElementById('counter-val');
+const counter = document.getElementById('counter');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+
+const STACK_X = 40;
+const STACK_W = 300;
+const STACK_TOP = 36;
+const ROW_H = 32;
+const ROW_GAP = 4;
+
+const SIG_X = 380;
+const SIG_Y = 36;
+const SIG_W = 300;
+const SIG_H = 310;
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function wrapText(str, maxChars) {
+  const words = str.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if ((cur + ' ' + w).trim().length > maxChars) {
+      if (cur) lines.push(cur);
+      cur = w;
+    } else {
+      cur = (cur ? cur + ' ' : '') + w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function render() {
+  stackG.innerHTML = '';
+  signalG.innerHTML = '';
+
+  stages.forEach((s, i) => {
+    const y = STACK_TOP + i * (ROW_H + ROW_GAP);
+    const isCurrent = i === idx;
+    const isPast = i < idx;
+    const isFuture = i > idx;
+    const pending = s.status === 'pending';
+
+    let stroke, fill, textColor, tagColor, dash = null;
+    if (pending) {
+      if (isCurrent) {
+        stroke = WARN;
+        fill = 'none';
+        textColor = WARN;
+        tagColor = WARN;
+        dash = '4,3';
+      } else {
+        stroke = '#222';
+        fill = 'none';
+        textColor = '#444';
+        tagColor = '#333';
+        dash = '4,3';
+      }
+    } else if (isCurrent) {
+      stroke = ACCENT;
+      fill = 'none';
+      textColor = ACCENT;
+      tagColor = ACCENT;
+    } else if (isPast) {
+      stroke = ACCENT_DIM;
+      fill = ACCENT_FILL_DARK;
+      textColor = ACCENT_MID;
+      tagColor = ACCENT_DIM;
+    } else {
+      stroke = '#222';
+      fill = 'none';
+      textColor = '#444';
+      tagColor = '#333';
+    }
+
+    const rect = svgEl('rect', {
+      x: STACK_X, y: y, width: STACK_W, height: ROW_H, rx: 3,
+      fill: fill, stroke: stroke,
+      'stroke-width': isCurrent ? 1.5 : 1
+    });
+    if (dash) rect.setAttribute('stroke-dasharray', dash);
+    stackG.appendChild(rect);
+
+    const idxTxt = svgEl('text', {
+      x: STACK_X + 12, y: y + ROW_H / 2 + 4,
+      'text-anchor': 'start',
+      'font-size': 10, 'font-family': 'IBM Plex Mono', fill: tagColor
+    });
+    idxTxt.textContent = String(i + 1).padStart(2, '0');
+    stackG.appendChild(idxTxt);
+
+    const nameTxt = svgEl('text', {
+      x: STACK_X + 36, y: y + ROW_H / 2 + 4,
+      'font-size': 11, 'font-family': 'IBM Plex Mono', fill: textColor
+    });
+    nameTxt.textContent = s.name;
+    stackG.appendChild(nameTxt);
+
+    const tagTxt = svgEl('text', {
+      x: STACK_X + STACK_W - 12, y: y + ROW_H / 2 + 4,
+      'text-anchor': 'end',
+      'font-size': 9, 'font-family': 'IBM Plex Mono', fill: tagColor
+    });
+    tagTxt.textContent = s.tag;
+    stackG.appendChild(tagTxt);
+
+    if (isPast && !pending) {
+      const check = svgEl('text', {
+        x: STACK_X - 14, y: y + ROW_H / 2 + 4,
+        'text-anchor': 'middle',
+        'font-size': 11, 'font-family': 'IBM Plex Mono', fill: ACCENT_MID
+      });
+      check.textContent = 'x';
+      stackG.appendChild(check);
+    }
+    if (isCurrent) {
+      const arrow = svgEl('text', {
+        x: STACK_X - 14, y: y + ROW_H / 2 + 4,
+        'text-anchor': 'middle',
+        'font-size': 12, 'font-family': 'IBM Plex Mono',
+        fill: pending ? WARN : ACCENT
+      });
+      arrow.textContent = '>';
+      stackG.appendChild(arrow);
+    }
+  });
+
+  const s = stages[idx];
+  const pending = s.status === 'pending';
+  const panelStroke = pending ? WARN : ACCENT;
+  const panelFill = pending ? 'none' : ACCENT_FILL_DARK;
+
+  const panel = svgEl('rect', {
+    x: SIG_X, y: SIG_Y, width: SIG_W, height: SIG_H, rx: 3,
+    fill: panelFill, stroke: panelStroke, 'stroke-width': 1
+  });
+  if (pending) panel.setAttribute('stroke-dasharray', '4,3');
+  signalG.appendChild(panel);
+
+  const sigLabel = svgEl('text', {
+    x: SIG_X + 16, y: SIG_Y + 24,
+    'font-size': 9, 'font-family': 'IBM Plex Mono',
+    fill: '#666', 'letter-spacing': 1.5
+  });
+  sigLabel.textContent = pending ? 'STATUS' : 'SIGNAL';
+  signalG.appendChild(sigLabel);
+
+  const sigHead = svgEl('text', {
+    x: SIG_X + 16, y: SIG_Y + 48,
+    'font-size': 12, 'font-family': 'IBM Plex Mono',
+    fill: pending ? WARN : ACCENT, 'font-weight': 500
+  });
+  sigHead.textContent = s.signal;
+  signalG.appendChild(sigHead);
+
+  const divider = svgEl('line', {
+    x1: SIG_X + 16, y1: SIG_Y + 62,
+    x2: SIG_X + SIG_W - 16, y2: SIG_Y + 62,
+    stroke: '#222', 'stroke-width': 1
+  });
+  signalG.appendChild(divider);
+
+  const detailLines = wrapText(s.detail, 40);
+  detailLines.forEach((line, i) => {
+    const t = svgEl('text', {
+      x: SIG_X + 16, y: SIG_Y + 82 + i * 16,
+      'font-size': 11, 'font-family': 'IBM Plex Mono', fill: '#888'
+    });
+    t.textContent = line;
+    signalG.appendChild(t);
+  });
+
+  const footDivY = SIG_Y + SIG_H - 58;
+  const footDiv = svgEl('line', {
+    x1: SIG_X + 16, y1: footDivY,
+    x2: SIG_X + SIG_W - 16, y2: footDivY,
+    stroke: '#222', 'stroke-width': 1
+  });
+  signalG.appendChild(footDiv);
+
+  const footLabel = svgEl('text', {
+    x: SIG_X + 16, y: footDivY + 16,
+    'font-size': 9, 'font-family': 'IBM Plex Mono',
+    fill: '#666', 'letter-spacing': 1.5
+  });
+  footLabel.textContent = pending ? 'WHERE IT SITS' : 'WHAT CHANGED';
+  signalG.appendChild(footLabel);
+
+  const footLines = wrapText(s.status_line, 40);
+  footLines.forEach((line, i) => {
+    const t = svgEl('text', {
+      x: SIG_X + 16, y: footDivY + 30 + i * 14,
+      'font-size': 10, 'font-family': 'IBM Plex Mono',
+      fill: pending ? WARN : ACCENT_MID
+    });
+    t.textContent = line;
+    signalG.appendChild(t);
+  });
+
+  counterVal.textContent = idx + 1;
+  counter.innerHTML = pending
+    ? `stage <span class="warn">${idx + 1}</span>/9 &middot; <span class="warn">not yet</span>`
+    : `stage <span>${idx + 1}</span>/9 &middot; <span>built</span>`;
+
+  statusText.textContent = pending
+    ? 'layer ' + (idx + 1) + ' is still pending. waiting for the signal that forces it.'
+    : 'layer ' + (idx + 1) + ' exists because the failure above happened on a real run.';
+  statusText.setAttribute('fill', pending ? WARN : '#888');
+
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === stages.length - 1;
+}
+
+btnPrev.addEventListener('click', () => {
+  if (idx > 0) { idx--; render(); }
+});
+btnNext.addEventListener('click', () => {
+  if (idx < stages.length - 1) { idx++; render(); }
+});
+
+render();
+</script>
+</body>
+</html>
