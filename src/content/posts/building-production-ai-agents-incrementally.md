@@ -1,6 +1,6 @@
 ---
 title: "Build notes: the zero shot trap"
-summary: "In-progress notes from building a JIRA-to-PR agent for Apache Pinot — the overengineering instinct I started with, the signals that told me when to add each layer, and the things I'm still figuring out."
+summary: "In-progress notes from building a JIRA-to-PR agent for Apache Pinot — the overengineering instinct I started with, the signals that told me when to add each layer and the things I'm still figuring out."
 publishedOn: 2026-04-16
 draft: true
 tags:
@@ -11,7 +11,7 @@ tags:
 featured: false
 ---
 
-These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while, and there are pieces I know I still need to rip out or rebuild. What I have is a few weeks of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
+These are build notes, not a postmortem. I'm still hacking on an AI agent that takes an Apache Pinot JIRA ticket and tries to turn it into a reviewed pull request. It isn't shipped, it probably won't be for a while and there are pieces I know I still need to rip out or rebuild. What I have is a few weeks of runs on real tickets, a pile of opinions I didn't have when I started and a lot of scribbled observations about what keeps breaking. This post is the dump.
 
 I have a problem with complexity: my first instinct on any task is to design the whole system upfront, every failure mode anticipated, every layer in place before anything real runs. So that's what I did. The architecture looked beautiful on a whiteboard. Then I ran it on a real ticket and almost none of the problems I'd designed for were the problems that actually happened.
 
@@ -91,7 +91,7 @@ What took me embarrassingly long to notice is that this is just the age old expl
 
 The signal is catching yourself writing procedural logic in the instruction file. Steps to follow in order, conditions to check, fallback chains. When that happens, those things belong in a tool, a script or a skill, not in prose the model reasons through every run. The instruction file should be the thinnest part of your system and should shrink relative to the rest as the system matures, not grow with it.
 
-The Pinot agent's CLAUDE.md had half a page on how to reproduce a reported bug: prefer a unit test first, fall back to an integration test, only spin up a live cluster as a last resort. That's a procedure, not orientation, and it kept drifting between runs because prose doesn't execute deterministically. Moving it into the `reproduce-issue` skill, where the fallback chain lived as actual script logic rather than instructions the model had to re-interpret, fixed the drift and let CLAUDE.md shrink back to pointers.
+The Pinot agent's CLAUDE.md had half a page on how to reproduce a reported bug: prefer a unit test first, fall back to an integration test, only spin up a live cluster as a last resort. That's a procedure, not orientation, and it kept drifting between runs because prose doesn't execute deterministically. Moving it into the `reproduce-issue` skill, where the fallback chain lived as actual script logic rather than instructions the model had to reinterpret, fixed the drift and let CLAUDE.md shrink back to pointers.
 
 Expect to rewrite it a dozen times because the final version describes a system that didn't exist yet when you started. Keep it to two things: which tools handle which tasks and which raw operations the agent must never run directly. The never list matters as much as the must list. And make the agent write intermediate state to files, not just conversation context, so the work survives when the context compresses during a long run.
 
@@ -123,4 +123,4 @@ Getting other people on an agent is the force multiplier I've watched teammates 
 
 This also means the system gets better through subtraction. Steps I'd wasted the model's reasoning on early on got moved into tools. Elaborate handling for theoretical problems got ripped out. If you're only adding and never removing, you're accumulating complexity faster than you're learning from usage.
 
-The Pinot agent I run today looks nothing like the one I designed on that first whiteboard. It's the one that survived contact with real tickets, real breakages and real reruns, built one layer at a time. It's still rough. There are skills I haven't extracted yet, components I know I'll need to package, and plenty of runs that still end with me pasting the error into a fresh conversation and starting over. But it works often enough to be worth running, which is more than the whiteboard version ever managed. If you're about to start your own, save yourself the whiteboard and start keeping notes like these instead.
+The Pinot agent I run today looks nothing like the one I designed on that first whiteboard. It's the one that survived contact with real tickets, real breakages and real reruns, built one layer at a time. It's still rough. There are skills I haven't extracted yet, components I know I'll need to package and plenty of runs that still end with me pasting the error into a fresh conversation and starting over. But it works often enough to be worth running, which is more than the whiteboard version ever managed. If you're about to start your own, save yourself the whiteboard and start keeping notes like these instead.
