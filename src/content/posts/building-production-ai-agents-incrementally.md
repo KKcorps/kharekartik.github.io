@@ -117,10 +117,20 @@ Lock correctness first. Run the expensive model, put everything it needs in cont
 
 ## Use it yourself, get users, learn what actually breaks
 
-I saved this for last because it matters more than everything above it combined. The Pinot agent isn't shipped yet, but I've been running it on real tickets myself day after day, and that alone has been enough to make every lesson above go from theory to reflex. The failure modes I'd designed for barely ever showed up. The ones I never anticipated hit on every third run. A couple of weeks in, I had a list of issues and not a single one was on my original roadmap.
+This one matters more than everything above it combined. The Pinot agent isn't shipped yet, but I've been running it on real tickets myself day after day, and that alone has been enough to make every lesson above go from theory to reflex. The failure modes I'd designed for barely ever showed up. The ones I never anticipated hit on every third run. A couple of weeks in, I had a list of issues and not a single one was on my original roadmap.
 
 Getting other people on an agent is the force multiplier I've watched teammates benefit from on their own projects. It surfaces workflows and edge cases you'd never hit yourself. I haven't got the Pinot agent to that stage yet, but even solo use has been enough to demolish the plan I started with.
 
 This also means the system gets better through subtraction. Steps I'd wasted the model's reasoning on early on got moved into tools. Elaborate handling for theoretical problems got ripped out. If you're only adding and never removing, you're accumulating complexity faster than you're learning from usage.
+
+---
+
+## I haven't figured out trust packets yet
+
+The biggest unresolved problem with the Pinot agent is reviewer trust. When it produces a diff that passes the tests, I still spend a nontrivial amount of time reading it back before I'd be comfortable handing it to anyone else, and I don't have a clean way to skip that step. What I want is a trust packet shipped alongside every PR: a bundle that proves the change did what it claimed. The reproducer, the before and after behavior, the coverage delta, whatever else a reviewer would want before signing off. The reviewer then verifies the packet instead of rederiving whether the change is sound.
+
+I haven't built this properly yet and it's probably too early to try. For now I'm leaning on tests as a cheap proxy: if the agent produces a new test that fails on main and passes on the patch, that's the minimum artifact I trust, and it catches a surprising amount. It isn't enough for anything subtle because a test that reproduces the wrong invariant will happily pass on a patch that doesn't actually fix the bug, but it's where I'm landing until I have a better sense of what a reviewer actually needs to see. Note to self for a few months from now: this is almost certainly the section I'll write next.
+
+---
 
 The Pinot agent I run today looks nothing like the one I designed on that first whiteboard. It's the one that survived contact with real tickets, real breakages and real reruns, built one layer at a time. It's still rough. There are skills I haven't extracted yet, components I know I'll need to package and plenty of runs that still end with me pasting the error into a fresh conversation and starting over. But it works often enough to be worth running, which is more than the whiteboard version ever managed. If you're about to start your own, save yourself the whiteboard and start keeping notes like these instead.
