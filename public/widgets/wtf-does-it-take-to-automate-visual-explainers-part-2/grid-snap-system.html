@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grid Snap System</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; cursor: crosshair; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .stats {
+    display: flex; gap: 24px; font-size: 11px; color: #666; margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// grid snap system</div>
+  <div class="widget-subtitle">click anywhere to place a node — watch it snap to the nearest grid point</div>
+
+  <svg id="main-svg" viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg">
+    <!-- grid area background -->
+    <rect id="canvas-bg" x="60" y="30" width="600" height="280" rx="2" fill="#0a0a0a" stroke="#222" stroke-width="1"/>
+    <!-- grid lines drawn by JS -->
+    <g id="grid-lines"></g>
+    <!-- label lane bands -->
+    <g id="lane-bands"></g>
+    <!-- shelf and lane lines -->
+    <g id="shelf-lines"></g>
+    <g id="lane-lines"></g>
+    <!-- interactive content -->
+    <g id="ghost-layer"></g>
+    <g id="nodes-layer"></g>
+    <g id="labels-layer"></g>
+    <!-- formula display -->
+    <g id="formula-layer"></g>
+    <!-- status panel -->
+    <rect x="60" y="318" width="600" height="34" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="340" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">snap(v) = round(v / 16) * 16</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-place6">place 6 nodes</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>grid: <span>16px</span></div>
+    <div>raw: <span id="stat-raw">(—, —)</span></div>
+    <div>snapped: <span id="stat-snapped">(—, —)</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// ── Constants ──
+// Canvas area within the SVG
+const CX = 60, CY = 30, CW = 600, CH = 280;
+
+// The actual stage is 1440x900 — we scale down to fit the canvas
+const STAGE_W = 1440, STAGE_H = 900;
+const SCALE_X = CW / STAGE_W;  // ~0.417
+const SCALE_Y = CH / STAGE_H;  // ~0.311
+
+// Grid size in stage coordinates
+const GRID_STAGE = 16;
+// Grid size in SVG coordinates
+const GRID_SVG_X = GRID_STAGE * SCALE_X;
+const GRID_SVG_Y = GRID_STAGE * SCALE_Y;
+
+// Shelf Y positions in stage coords
+const SHELF_Y_STAGE = [180, 420, 660];
+const SHELF_LABELS = ['ingest', 'compute', 'store'];
+
+// Lane X positions in stage coords
+const LANE_X_STAGE = [240, 540, 900, 1200];
+const LANE_LABELS = ['source', 'transform', 'buffer', 'sink'];
+
+// Convert stage coords to SVG coords
+function toSvg(sx, sy) {
+  return [CX + sx * SCALE_X, CY + sy * SCALE_Y];
+}
+
+// Convert SVG coords to stage coords
+function toStage(svgX, svgY) {
+  return [(svgX - CX) / SCALE_X, (svgY - CY) / SCALE_Y];
+}
+
+// Snap to grid in stage coordinates
+function snap(v) {
+  return Math.round(v / GRID_STAGE) * GRID_STAGE;
+}
+
+// ── DOM refs ──
+const svg = document.getElementById('main-svg');
+const gridLinesG = document.getElementById('grid-lines');
+const laneBandsG = document.getElementById('lane-bands');
+const shelfLinesG = document.getElementById('shelf-lines');
+const laneLinesG = document.getElementById('lane-lines');
+const ghostLayer = document.getElementById('ghost-layer');
+const nodesLayer = document.getElementById('nodes-layer');
+const labelsLayer = document.getElementById('labels-layer');
+const statusText = document.getElementById('status-text');
+const statRaw = document.getElementById('stat-raw');
+const statSnapped = document.getElementById('stat-snapped');
+
+// ── State ──
+let placedNodes = [];   // {sx, sy, snapX, snapY, label?}
+let ghostPos = null;    // {svgX, svgY}
+let ghostTimeout = null;
+
+// ── Draw static elements ──
+function drawGrid() {
+  gridLinesG.innerHTML = '';
+  // Vertical grid lines
+  for (let x = CX; x <= CX + CW; x += GRID_SVG_X) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x);
+    line.setAttribute('y1', CY);
+    line.setAttribute('x2', x);
+    line.setAttribute('y2', CY + CH);
+    line.setAttribute('stroke', '#222');
+    line.setAttribute('stroke-width', '0.5');
+    line.setAttribute('opacity', '0.2');
+    gridLinesG.appendChild(line);
+  }
+  // Horizontal grid lines
+  for (let y = CY; y <= CY + CH; y += GRID_SVG_Y) {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', CX);
+    line.setAttribute('y1', y);
+    line.setAttribute('x2', CX + CW);
+    line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#222');
+    line.setAttribute('stroke-width', '0.5');
+    line.setAttribute('opacity', '0.2');
+    gridLinesG.appendChild(line);
+  }
+}
+
+function drawLaneBands() {
+  laneBandsG.innerHTML = '';
+  // Draw subtle bands between shelf pairs
+  const topEdge = 0;
+  const bottomEdge = STAGE_H;
+  const allY = [topEdge, ...SHELF_Y_STAGE, bottomEdge];
+
+  for (let i = 0; i < allY.length - 1; i++) {
+    // Only draw bands in even-indexed gaps (alternating)
+    if (i % 2 === 1) {
+      const [, y1] = toSvg(0, allY[i]);
+      const [, y2] = toSvg(0, allY[i + 1]);
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', CX);
+      rect.setAttribute('y', y1);
+      rect.setAttribute('width', CW);
+      rect.setAttribute('height', y2 - y1);
+      rect.setAttribute('fill', ACCENT_FILL_DARK);
+      rect.setAttribute('opacity', '0.5');
+      laneBandsG.appendChild(rect);
+    }
+  }
+}
+
+function drawShelfLines() {
+  shelfLinesG.innerHTML = '';
+  SHELF_Y_STAGE.forEach((sy, i) => {
+    const [, svgY] = toSvg(0, sy);
+    // Dashed line
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', CX);
+    line.setAttribute('y1', svgY);
+    line.setAttribute('x2', CX + CW);
+    line.setAttribute('y2', svgY);
+    line.setAttribute('stroke', '#333');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '4 3');
+    shelfLinesG.appendChild(line);
+
+    // Label on left
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', CX - 6);
+    label.setAttribute('y', svgY + 3);
+    label.setAttribute('text-anchor', 'end');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('font-family', 'IBM Plex Mono');
+    label.setAttribute('fill', '#666');
+    label.textContent = SHELF_LABELS[i];
+    shelfLinesG.appendChild(label);
+
+    // Y coordinate label on right
+    const yLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    yLabel.setAttribute('x', CX + CW + 6);
+    yLabel.setAttribute('y', svgY + 3);
+    yLabel.setAttribute('text-anchor', 'start');
+    yLabel.setAttribute('font-size', '8');
+    yLabel.setAttribute('font-family', 'IBM Plex Mono');
+    yLabel.setAttribute('fill', '#444');
+    yLabel.textContent = `y:${sy}`;
+    shelfLinesG.appendChild(yLabel);
+  });
+}
+
+function drawLaneLines() {
+  laneLinesG.innerHTML = '';
+  LANE_X_STAGE.forEach((sx, i) => {
+    const [svgX] = toSvg(sx, 0);
+    // Dashed line
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', svgX);
+    line.setAttribute('y1', CY);
+    line.setAttribute('x2', svgX);
+    line.setAttribute('y2', CY + CH);
+    line.setAttribute('stroke', '#333');
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '4 3');
+    laneLinesG.appendChild(line);
+
+    // Label on top
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', svgX);
+    label.setAttribute('y', CY - 8);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('font-size', '9');
+    label.setAttribute('font-family', 'IBM Plex Mono');
+    label.setAttribute('fill', '#666');
+    label.textContent = LANE_LABELS[i];
+    laneLinesG.appendChild(label);
+
+    // X coordinate label below the lane label
+    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xLabel.setAttribute('x', svgX);
+    xLabel.setAttribute('y', CY + CH + 12);
+    xLabel.setAttribute('text-anchor', 'middle');
+    xLabel.setAttribute('font-size', '8');
+    xLabel.setAttribute('font-family', 'IBM Plex Mono');
+    xLabel.setAttribute('fill', '#444');
+    xLabel.textContent = `x:${sx}`;
+    laneLinesG.appendChild(xLabel);
+  });
+}
+
+// ── Render dynamic elements ──
+function renderNodes() {
+  nodesLayer.innerHTML = '';
+  labelsLayer.innerHTML = '';
+
+  placedNodes.forEach((node) => {
+    const [svgX, svgY] = toSvg(node.snapX, node.snapY);
+
+    // Node circle
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', svgX);
+    circle.setAttribute('cy', svgY);
+    circle.setAttribute('r', 8);
+    circle.setAttribute('fill', ACCENT_FILL);
+    circle.setAttribute('stroke', ACCENT);
+    circle.setAttribute('stroke-width', '2');
+    nodesLayer.appendChild(circle);
+
+    // Inner dot
+    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', svgX);
+    dot.setAttribute('cy', svgY);
+    dot.setAttribute('r', 2.5);
+    dot.setAttribute('fill', ACCENT);
+    nodesLayer.appendChild(dot);
+
+    // Label if present
+    if (node.label) {
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x', svgX);
+      txt.setAttribute('y', svgY - 14);
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('font-size', '8');
+      txt.setAttribute('font-family', 'IBM Plex Mono');
+      txt.setAttribute('fill', ACCENT_MID);
+      txt.textContent = node.label;
+      labelsLayer.appendChild(txt);
+    }
+  });
+}
+
+function showGhost(rawSvgX, rawSvgY, snapSvgX, snapSvgY) {
+  ghostLayer.innerHTML = '';
+
+  // Ghost circle at raw position
+  const ghost = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  ghost.setAttribute('cx', rawSvgX);
+  ghost.setAttribute('cy', rawSvgY);
+  ghost.setAttribute('r', 8);
+  ghost.setAttribute('fill', 'none');
+  ghost.setAttribute('stroke', '#333');
+  ghost.setAttribute('stroke-width', '1.5');
+  ghost.setAttribute('stroke-dasharray', '3 2');
+  ghost.setAttribute('opacity', '1');
+  ghostLayer.appendChild(ghost);
+
+  // Line from ghost to snap position
+  let snapLine = null;
+  const dx = snapSvgX - rawSvgX;
+  const dy = snapSvgY - rawSvgY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist > 1) {
+    snapLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    snapLine.setAttribute('x1', rawSvgX);
+    snapLine.setAttribute('y1', rawSvgY);
+    snapLine.setAttribute('x2', snapSvgX);
+    snapLine.setAttribute('y2', snapSvgY);
+    snapLine.setAttribute('stroke', '#333');
+    snapLine.setAttribute('stroke-width', '0.8');
+    snapLine.setAttribute('stroke-dasharray', '2 2');
+    ghostLayer.appendChild(snapLine);
+  }
+
+  // Fade out ghost
+  if (ghostTimeout) clearTimeout(ghostTimeout);
+  ghostTimeout = setTimeout(() => {
+    ghost.style.transition = 'opacity 0.6s ease-out';
+    ghost.setAttribute('opacity', '0');
+    if (snapLine) {
+      snapLine.style.transition = 'opacity 0.6s ease-out';
+      snapLine.setAttribute('opacity', '0');
+    }
+    setTimeout(() => { ghostLayer.innerHTML = ''; }, 700);
+  }, 800);
+}
+
+function updateStats(rawSX, rawSY, snapSX, snapSY) {
+  statRaw.textContent = `(${Math.round(rawSX)}, ${Math.round(rawSY)})`;
+  statSnapped.textContent = `(${snapSX}, ${snapSY})`;
+  statusText.textContent = `raw: (${Math.round(rawSX)}, ${Math.round(rawSY)}) → snapped: (${snapSX}, ${snapSY})`;
+}
+
+// ── Click handler ──
+function getSvgPoint(evt) {
+  const pt = svg.createSVGPoint();
+  const touch = evt.touches ? evt.touches[0] : evt;
+  pt.x = touch.clientX;
+  pt.y = touch.clientY;
+  const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+  return { x: svgPt.x, y: svgPt.y };
+}
+
+function handleCanvasClick(evt) {
+  evt.preventDefault();
+  const { x, y } = getSvgPoint(evt);
+
+  // Check if click is within canvas bounds
+  if (x < CX || x > CX + CW || y < CY || y > CY + CH) return;
+
+  // Convert to stage coordinates
+  const [stageX, stageY] = toStage(x, y);
+
+  // Snap
+  const snapX = snap(stageX);
+  const snapY = snap(stageY);
+
+  // Clamp snapped values to stage
+  const clampedSnapX = Math.max(0, Math.min(STAGE_W, snapX));
+  const clampedSnapY = Math.max(0, Math.min(STAGE_H, snapY));
+
+  // SVG positions
+  const [snapSvgX, snapSvgY] = toSvg(clampedSnapX, clampedSnapY);
+
+  // Show ghost at raw position
+  showGhost(x, y, snapSvgX, snapSvgY);
+
+  // Add node
+  placedNodes.push({
+    sx: stageX,
+    sy: stageY,
+    snapX: clampedSnapX,
+    snapY: clampedSnapY,
+  });
+
+  updateStats(stageX, stageY, clampedSnapX, clampedSnapY);
+  renderNodes();
+}
+
+svg.addEventListener('click', handleCanvasClick);
+svg.addEventListener('touchstart', handleCanvasClick, { passive: false });
+
+// ── Place 6 nodes (the blog example layout) ──
+const PRESET_NODES = [
+  { x: 240,  y: 180, label: 'kafka' },
+  { x: 540,  y: 180, label: 'parser' },
+  { x: 540,  y: 420, label: 'engine' },
+  { x: 900,  y: 420, label: 'state' },
+  { x: 900,  y: 660, label: 'segment' },
+  { x: 1200, y: 660, label: 'deep-store' },
+];
+
+function placePresetNodes() {
+  placedNodes = [];
+  ghostLayer.innerHTML = '';
+
+  let delay = 0;
+  PRESET_NODES.forEach((preset, i) => {
+    setTimeout(() => {
+      // Simulate a slightly off raw position that snaps to the intersection
+      const rawOffsetX = (Math.random() - 0.5) * 30;
+      const rawOffsetY = (Math.random() - 0.5) * 30;
+      const rawSX = preset.x + rawOffsetX;
+      const rawSY = preset.y + rawOffsetY;
+      const snapX = snap(rawSX);
+      const snapY = snap(rawSY);
+
+      const [rawSvgX, rawSvgY] = toSvg(rawSX, rawSY);
+      const [snapSvgX, snapSvgY] = toSvg(snapX, snapY);
+
+      showGhost(rawSvgX, rawSvgY, snapSvgX, snapSvgY);
+
+      placedNodes.push({
+        sx: rawSX,
+        sy: rawSY,
+        snapX: snapX,
+        snapY: snapY,
+        label: preset.label,
+      });
+
+      updateStats(rawSX, rawSY, snapX, snapY);
+      renderNodes();
+
+      // Draw connection lines between sequential nodes
+      if (placedNodes.length > 1) {
+        drawConnections();
+      }
+
+      // Final status
+      if (i === PRESET_NODES.length - 1) {
+        setTimeout(() => {
+          statusText.textContent = '6 nodes placed at shelf/lane intersections — layout complete';
+          statusText.setAttribute('fill', ACCENT);
+        }, 200);
+      }
+    }, delay);
+    delay += 300;
+  });
+}
+
+function drawConnections() {
+  // Remove old connections
+  const oldConns = nodesLayer.querySelectorAll('.connection');
+  oldConns.forEach(c => c.remove());
+
+  for (let i = 0; i < placedNodes.length - 1; i++) {
+    const a = placedNodes[i];
+    const b = placedNodes[i + 1];
+    if (!a.label || !b.label) continue;
+
+    const [ax, ay] = toSvg(a.snapX, a.snapY);
+    const [bx, by] = toSvg(b.snapX, b.snapY);
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.classList.add('connection');
+    line.setAttribute('x1', ax);
+    line.setAttribute('y1', ay);
+    line.setAttribute('x2', bx);
+    line.setAttribute('y2', by);
+    line.setAttribute('stroke', ACCENT_DIM);
+    line.setAttribute('stroke-width', '1');
+    line.setAttribute('stroke-dasharray', '4 3');
+    // Insert before nodes so lines appear behind
+    nodesLayer.insertBefore(line, nodesLayer.firstChild);
+  }
+}
+
+// ── Reset ──
+function resetWidget() {
+  placedNodes = [];
+  ghostLayer.innerHTML = '';
+  if (ghostTimeout) clearTimeout(ghostTimeout);
+  renderNodes();
+  statRaw.textContent = '(—, —)';
+  statSnapped.textContent = '(—, —)';
+  statusText.textContent = 'snap(v) = round(v / 16) * 16';
+  statusText.setAttribute('fill', '#888');
+}
+
+// ── Button handlers ──
+document.getElementById('btn-place6').addEventListener('click', () => {
+  resetWidget();
+  setTimeout(placePresetNodes, 100);
+});
+document.getElementById('btn-reset').addEventListener('click', resetWidget);
+
+// ── Init ──
+drawGrid();
+drawLaneBands();
+drawShelfLines();
+drawLaneLines();
+renderNodes();
+</script>
+</body>
+</html>
