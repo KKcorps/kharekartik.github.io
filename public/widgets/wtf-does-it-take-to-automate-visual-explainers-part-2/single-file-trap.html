@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Single File Trap</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .button-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mode-label { margin-left: auto; font-size: 11px; color: #666; }
+  .mode-label span { color: var(--w-accent); }
+  .stats {
+    display: flex; gap: 22px; font-size: 11px; color: #666; margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .bad { color: #e64a4a; }
+  .stats .warn { color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// single file trap</div>
+  <div class="widget-subtitle">toggle the editing surface, then apply a fix and watch the blast radius change</div>
+
+  <svg id="main-svg" viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+    <g id="content"></g>
+    <rect x="40" y="320" width="640" height="50" rx="3" fill="none" stroke="#222" stroke-width="1"/>
+    <text x="360" y="341" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-line-1">single file mode loads the whole blob for every fix</text>
+    <text x="360" y="359" text-anchor="middle" fill="#666" font-size="10"
+          font-family="IBM Plex Mono" id="status-line-2">pick a fix to see what else gets dragged into the edit</text>
+  </svg>
+
+  <div class="controls">
+    <div class="button-group">
+      <button id="btn-single" class="active">single file</button>
+      <button id="btn-split">split surface</button>
+    </div>
+    <div class="button-group">
+      <button id="btn-label" class="active">label fix</button>
+      <button id="btn-motion">motion fix</button>
+      <button id="btn-runtime">runtime check</button>
+    </div>
+    <div class="mode-label">mode: <span id="mode-display">single file</span></div>
+  </div>
+
+  <div class="stats">
+    <div>context loaded: <span id="stat-context">780 lines</span></div>
+    <div>blast radius: <span id="stat-blast" class="bad">high</span></div>
+    <div>review signal: <span id="stat-signal" class="warn">visual guess</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+// 1. State
+let mode = 'single';
+let fix = 'label';
+
+const singleBlocks = [
+  { id: 'markup', label: 'markup', detail: 'labels + panels', x: 80, y: 86 },
+  { id: 'state', label: 'state', detail: 'sim variables', x: 275, y: 86 },
+  { id: 'css', label: 'css', detail: 'spacing + type', x: 470, y: 86 },
+  { id: 'animation', label: 'animation', detail: 'timelines', x: 80, y: 166 },
+  { id: 'dom', label: 'dom wiring', detail: 'selectors', x: 275, y: 166 },
+  { id: 'review', label: 'review', detail: 'screenshots', x: 470, y: 166 },
+];
+
+const splitBlocks = [
+  { id: 'layout', label: 'layout.ts', detail: 'grid + labels', x: 65, y: 90 },
+  { id: 'scene', label: 'scene.ts', detail: 'world objects', x: 225, y: 90 },
+  { id: 'motion', label: 'timeline.ts', detail: 'stage motion', x: 385, y: 90 },
+  { id: 'shell', label: 'shell.tsx', detail: 'controls', x: 545, y: 90 },
+  { id: 'probe', label: 'probe.ts', detail: 'runtime state', x: 165, y: 190 },
+  { id: 'checks', label: 'checks.ts', detail: 'layout gates', x: 385, y: 190 },
+];
+
+const scenarios = {
+  label: {
+    label: 'label fix',
+    singleTouched: ['markup', 'css', 'dom'],
+    singleRisk: ['animation'],
+    splitTouched: ['layout', 'checks'],
+    splitRisk: [],
+    singleStatus: [
+      'a label fix pulls markup, css and selector wiring into the same edit',
+      'the visible change is small, but playback can still get nicked'
+    ],
+    splitStatus: [
+      'the label fix stays in layout.ts and checks.ts',
+      'animation code does not need to be reopened just to move text'
+    ],
+  },
+  motion: {
+    label: 'motion fix',
+    singleTouched: ['animation', 'state', 'dom'],
+    singleRisk: ['markup', 'css'],
+    splitTouched: ['motion', 'scene'],
+    splitRisk: [],
+    singleStatus: [
+      'a motion fix reaches into state, timelines and DOM selectors',
+      'the agent can improve movement while damaging the labels'
+    ],
+    splitStatus: [
+      'the motion fix stays near timeline.ts and scene.ts',
+      'layout rules remain a separate contract instead of a hope'
+    ],
+  },
+  runtime: {
+    label: 'runtime check',
+    singleTouched: ['review', 'dom', 'state'],
+    singleRisk: ['animation'],
+    splitTouched: ['probe', 'checks', 'shell'],
+    splitRisk: [],
+    singleStatus: [
+      'runtime review is mostly screenshots and interpretation',
+      'without a stable probe, motion failures can hide at rest'
+    ],
+    splitStatus: [
+      'runtime review can read probe.ts and checks.ts directly',
+      'the harness gets evidence instead of another vibe check'
+    ],
+  },
+};
+
+// 2. DOM refs
+const content = document.getElementById('content');
+const statusLine1 = document.getElementById('status-line-1');
+const statusLine2 = document.getElementById('status-line-2');
+const modeDisplay = document.getElementById('mode-display');
+const statContext = document.getElementById('stat-context');
+const statBlast = document.getElementById('stat-blast');
+const statSignal = document.getElementById('stat-signal');
+const modeButtons = {
+  single: document.getElementById('btn-single'),
+  split: document.getElementById('btn-split'),
+};
+const fixButtons = {
+  label: document.getElementById('btn-label'),
+  motion: document.getElementById('btn-motion'),
+  runtime: document.getElementById('btn-runtime'),
+};
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  return el;
+}
+
+function drawText(x, y, text, attrs = {}) {
+  const el = svgEl('text', {
+    x, y,
+    'font-family': 'IBM Plex Mono',
+    'font-size': attrs.size || 11,
+    fill: attrs.fill || '#888',
+    'text-anchor': attrs.anchor || 'middle',
+  });
+  if (attrs.weight) el.setAttribute('font-weight', attrs.weight);
+  if (attrs.spacing) el.setAttribute('letter-spacing', attrs.spacing);
+  el.textContent = text;
+  content.appendChild(el);
+  return el;
+}
+
+function drawBox(block, state, width, height) {
+  let stroke = '#222';
+  let fill = 'none';
+  let text = '#444';
+  let detail = '#333';
+  let strokeWidth = '1';
+  let dash = '';
+
+  if (state === 'touched') {
+    stroke = ACCENT;
+    fill = ACCENT_FILL;
+    text = ACCENT;
+    detail = '#888';
+    strokeWidth = '1.5';
+  } else if (state === 'risk') {
+    stroke = '#e64a4a';
+    fill = '#1a0a0a';
+    text = '#e64a4a';
+    detail = '#888';
+    strokeWidth = '1.5';
+  } else if (state === 'stable') {
+    stroke = ACCENT_DIM;
+    fill = ACCENT_FILL_DARK;
+    text = ACCENT_MID;
+    detail = ACCENT_SOFT;
+  }
+
+  const rect = svgEl('rect', {
+    x: block.x, y: block.y, width, height, rx: 3,
+    fill, stroke, 'stroke-width': strokeWidth,
+  });
+  if (dash) rect.setAttribute('stroke-dasharray', dash);
+  content.appendChild(rect);
+
+  drawText(block.x + width / 2, block.y + 24, block.label, {
+    fill: text, size: 11, weight: state === 'touched' ? '500' : '400',
+  });
+  drawText(block.x + width / 2, block.y + 43, block.detail, {
+    fill: detail, size: 9,
+  });
+}
+
+function drawConnector(x1, y1, x2, y2, color, dashed) {
+  const line = svgEl('line', {
+    x1, y1, x2, y2,
+    stroke: color,
+    'stroke-width': 1,
+  });
+  if (dashed) line.setAttribute('stroke-dasharray', '4,3');
+  content.appendChild(line);
+}
+
+function drawSingleFile(scenario) {
+  drawText(60, 28, 'SINGLE FILE SURFACE', { fill: '#666', size: 10, anchor: 'start', spacing: 1 });
+  drawText(660, 28, 'one blob, many accidental neighbors', { fill: '#444', size: 9, anchor: 'end' });
+
+  const wrapper = svgEl('rect', {
+    x: 55, y: 52, width: 610, height: 230, rx: 3,
+    fill: 'none', stroke: '#222', 'stroke-width': 1,
+  });
+  content.appendChild(wrapper);
+
+  drawText(360, 73, 'index.html', { fill: '#666', size: 10, spacing: 1 });
+
+  const touched = new Set(scenario.singleTouched);
+  const risks = new Set(scenario.singleRisk);
+  singleBlocks.forEach((block) => {
+    const state = touched.has(block.id) ? 'touched' : risks.has(block.id) ? 'risk' : 'inactive';
+    drawBox(block, state, 170, 56);
+  });
+
+  scenario.singleTouched.forEach((id) => {
+    const from = singleBlocks.find((b) => b.id === id);
+    scenario.singleRisk.forEach((riskId) => {
+      const to = singleBlocks.find((b) => b.id === riskId);
+      drawConnector(from.x + 85, from.y + 56, to.x + 85, to.y, '#e64a4a', true);
+    });
+  });
+
+  drawText(70, 304, 'changed on purpose', { fill: ACCENT, size: 9, anchor: 'start' });
+  drawText(250, 304, 'accidental break risk', { fill: '#e64a4a', size: 9, anchor: 'start' });
+  drawText(470, 304, 'loaded just because nearby', { fill: '#444', size: 9, anchor: 'start' });
+}
+
+function drawSplitSurface(scenario) {
+  drawText(60, 28, 'SPLIT EDITING SURFACE', { fill: '#666', size: 10, anchor: 'start', spacing: 1 });
+  drawText(660, 28, 'smaller context, clearer ownership', { fill: '#444', size: 9, anchor: 'end' });
+
+  const touched = new Set(scenario.splitTouched);
+  const risks = new Set(scenario.splitRisk);
+
+  drawConnector(145, 176, 545, 176, '#222', false);
+  drawConnector(305, 166, 235, 190, ACCENT_FAINT, false);
+  drawConnector(465, 166, 455, 190, ACCENT_FAINT, false);
+
+  splitBlocks.forEach((block) => {
+    const state = touched.has(block.id) ? 'touched' : risks.has(block.id) ? 'risk' : 'stable';
+    drawBox(block, state, 110, 62);
+  });
+
+  const gate = svgEl('rect', {
+    x: 90, y: 276, width: 540, height: 26, rx: 3,
+    fill: ACCENT_FILL_DARK, stroke: ACCENT_DIM, 'stroke-width': 1,
+  });
+  content.appendChild(gate);
+  drawText(360, 293, 'stable shell, renderer, validation and scene logic stop being renegotiated on every run', {
+    fill: ACCENT_MID, size: 9,
+  });
+}
+
+function updateStats(scenario) {
+  modeDisplay.textContent = mode === 'single' ? 'single file' : 'split surface';
+
+  if (mode === 'single') {
+    statContext.textContent = fix === 'runtime' ? '920 lines' : '780 lines';
+    statBlast.textContent = fix === 'runtime' ? 'hidden' : 'high';
+    statBlast.className = fix === 'runtime' ? 'warn' : 'bad';
+    statSignal.textContent = fix === 'runtime' ? 'screenshots' : 'visual guess';
+    statSignal.className = 'warn';
+    statusLine1.textContent = scenario.singleStatus[0];
+    statusLine2.textContent = scenario.singleStatus[1];
+    statusLine1.setAttribute('fill', '#888');
+    statusLine2.setAttribute('fill', '#666');
+  } else {
+    statContext.textContent = fix === 'runtime' ? '210 lines' : '140 lines';
+    statBlast.textContent = 'bounded';
+    statBlast.className = '';
+    statSignal.textContent = fix === 'runtime' ? 'probe + checks' : 'local contract';
+    statSignal.className = '';
+    statusLine1.textContent = scenario.splitStatus[0];
+    statusLine2.textContent = scenario.splitStatus[1];
+    statusLine1.setAttribute('fill', ACCENT_MID);
+    statusLine2.setAttribute('fill', '#888');
+  }
+
+  Object.entries(modeButtons).forEach(([key, btn]) => btn.classList.toggle('active', key === mode));
+  Object.entries(fixButtons).forEach(([key, btn]) => btn.classList.toggle('active', key === fix));
+}
+
+function render() {
+  content.innerHTML = '';
+  const scenario = scenarios[fix];
+  if (mode === 'single') drawSingleFile(scenario);
+  else drawSplitSurface(scenario);
+  updateStats(scenario);
+}
+
+Object.entries(modeButtons).forEach(([key, btn]) => {
+  btn.addEventListener('click', () => {
+    mode = key;
+    render();
+  });
+});
+
+Object.entries(fixButtons).forEach(([key, btn]) => {
+  btn.addEventListener('click', () => {
+    fix = key;
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>

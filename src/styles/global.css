@@ -32,7 +32,7 @@ html[data-theme='dark'] {
 	--accent-cyan: #00e5cc;
 	--accent-amber: #ffb300;
 
-	--article-bg: #0d0d0d;
+	--article-bg: #090b10;
 	--article-text: #c8c8c8;
 	--article-rule: #222;
 	--article-strong: #ffffff;
@@ -64,7 +64,7 @@ html[data-theme='light'] {
 	--accent-cyan: #2a7f73;
 	--accent-amber: #8e6d1a;
 
-	--article-bg: #f7f8f5;
+	--article-bg: #f4efe4;
 	--article-text: #273126;
 	--article-rule: #c8d0c8;
 	--article-strong: #121912;
