@@ -1,5 +1,5 @@
 ---
-title: "Me vs RocksDB in Production"
+title: "I Gave RocksDB 1 Billion Primary Keys. Here's What Broke"
 summary: "What started breaking once RocksDB crossed from useful embedded store into a scale-sensitive production subsystem."
 publishedOn: 2026-05-20
 draft: false
