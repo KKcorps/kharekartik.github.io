@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSM Skew Map</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  .slider-wrap { display: flex; gap: 8px; align-items: center; color: #666; font-size: 11px; flex: 1 1 240px; min-width: 220px; }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 4px; background: #222;
+    border-radius: 2px; outline: none; margin: 0 4px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; background: var(--w-accent);
+    border-radius: 50%; cursor: pointer; border: 2px solid #0a0a0a;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; background: var(--w-accent);
+    border-radius: 50%; cursor: pointer; border: 2px solid #0a0a0a;
+  }
+  .stats {
+    display: flex; gap: 18px; font-size: 11px; color: #666; margin-top: 14px; flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .warn { color: #e6a64a; }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// lsm skew map</div>
+  <div class="widget-subtitle">drag skew to see why the worst partition can matter more than the average</div>
+
+  <svg id="main-svg" viewBox="0 0 720 390" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="18" fill="#666" font-size="10" font-family="IBM Plex Mono">LEVELS: NEW FILES AT L0, OLDER FILES TOWARD L6</text>
+    <g id="content"></g>
+    <rect x="40" y="330" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1" id="status-panel"/>
+    <text x="360" y="354" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">balanced partitions: average and tail tell the same story</text>
+    <text x="360" y="368" text-anchor="middle" fill="#555" font-size="9"
+          font-family="IBM Plex Mono" id="status-sub">each mark is an SST file RocksDB may need metadata for</text>
+  </svg>
+
+  <div class="controls">
+    <div class="slider-wrap">skew <input id="skew" type="range" min="0" max="100" value="25"></div>
+    <button id="btn-compact">compact hot partition</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>average files: <span id="stat-avg">0</span></div>
+    <div>hot partition files: <span id="stat-hot">0</span></div>
+    <div>tail read cost: <span id="stat-tail">0</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const content = document.getElementById('content');
+const statusPanel = document.getElementById('status-panel');
+const statusText = document.getElementById('status-text');
+const statusSub = document.getElementById('status-sub');
+const skewInput = document.getElementById('skew');
+const statAvg = document.getElementById('stat-avg');
+const statHot = document.getElementById('stat-hot');
+const statTail = document.getElementById('stat-tail');
+
+let skew = 25;
+const partitions = ['p0', 'p1', 'hot p2', 'p3'];
+const levels = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6'];
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function countsForPartition(index) {
+  const base = [2, 2, 3, 4, 6, 9, 18 + (index % 2) * 5];
+  if (index !== 2) return base;
+  const factor = skew / 100;
+  return [
+    2 + Math.round(factor * 5),
+    2 + Math.round(factor * 4),
+    3 + Math.round(factor * 6),
+    4 + Math.round(factor * 8),
+    6 + Math.round(factor * 14),
+    10 + Math.round(factor * 22),
+    24 + Math.round(factor * 116)
+  ];
+}
+
+function partitionTotal(index) {
+  return countsForPartition(index).reduce((sum, value) => sum + value, 0);
+}
+
+function drawFileDots(x, y, count, color) {
+  const maxDots = 24;
+  const dots = Math.min(count, maxDots);
+  for (let i = 0; i < dots; i++) {
+    const dx = x + 8 + (i % 8) * 9;
+    const dy = y + 14 + Math.floor(i / 8) * 6;
+    content.appendChild(makeSvgEl('rect', {
+      x: dx, y: dy, width: 5, height: 4, rx: 1,
+      fill: ACCENT_FILL_DARK, stroke: color, 'stroke-width': 0.8
+    }));
+  }
+  if (count > maxDots) addText(content, x + 96, y + 26, `+${count - maxDots}`, { fill: color, size: '8', anchor: 'end' });
+}
+
+function render() {
+  content.innerHTML = '';
+  const left = 82;
+  const top = 44;
+  const cellW = 122;
+  const rowH = 35;
+  const gap = 12;
+
+  partitions.forEach((name, i) => {
+    const x = left + i * (cellW + gap);
+    const total = partitionTotal(i);
+    const color = i === 2 && total > 120 ? '#e64a4a' : i === 2 && total > 80 ? '#e6a64a' : ACCENT_MID;
+    addText(content, x + cellW / 2, 30, name, { fill: i === 2 ? color : '#888', size: '10', anchor: 'middle' });
+  });
+
+  levels.forEach((level, levelIndex) => {
+    const y = top + levelIndex * rowH;
+    addText(content, 40, y + 23, level, { fill: levelIndex === 6 ? '#888' : '#666', size: '10' });
+    partitions.forEach((name, pIndex) => {
+      const x = left + pIndex * (cellW + gap);
+      const count = countsForPartition(pIndex)[levelIndex];
+      const isHot = pIndex === 2;
+      const severe = isHot && count > 90;
+      const warn = isHot && count > 45;
+      const stroke = severe ? '#e64a4a' : warn ? '#e6a64a' : isHot ? ACCENT : '#333';
+      const fill = isHot ? ACCENT_FILL_DARK : 'none';
+      content.appendChild(makeSvgEl('rect', {
+        x, y, width: cellW, height: rowH - 5, rx: 3,
+        fill, stroke, 'stroke-width': isHot ? 1.4 : 1
+      }));
+      drawFileDots(x, y, count, stroke);
+      addText(content, x + 8, y + 12, count, { fill: severe ? '#e64a4a' : warn ? '#e6a64a' : '#888', size: '9' });
+    });
+  });
+
+  const totals = partitions.map((_, i) => partitionTotal(i));
+  const avg = totals.reduce((sum, value) => sum + value, 0) / totals.length;
+  const hot = totals[2];
+  const tailCost = Math.round((hot / Math.max(1, avg)) * 100);
+  statAvg.textContent = Math.round(avg);
+  statHot.textContent = hot;
+  statTail.textContent = `${tailCost}%`;
+  statHot.className = hot > 120 ? 'del' : hot > 80 ? 'warn' : '';
+  statTail.className = tailCost > 220 ? 'del' : tailCost > 160 ? 'warn' : '';
+
+  if (hot > 145) {
+    statusText.textContent = 'the average still looks survivable, but one partition is carrying the incident';
+    statusSub.textContent = 'L6 file count drives filter, index, open file and compaction pressure for that slice';
+    statusText.setAttribute('fill', '#e64a4a');
+    statusPanel.setAttribute('stroke', '#e64a4a');
+  } else if (hot > 95) {
+    statusText.textContent = 'skew is visible: the hot partition now has a different physical shape';
+    statusSub.textContent = 'the median partition is no longer representative of tail reads';
+    statusText.setAttribute('fill', '#e6a64a');
+    statusPanel.setAttribute('stroke', '#e6a64a');
+  } else {
+    statusText.textContent = 'balanced partitions: average and tail tell the same story';
+    statusSub.textContent = 'each mark is an SST file RocksDB may need metadata for';
+    statusText.setAttribute('fill', ACCENT);
+    statusPanel.setAttribute('stroke', ACCENT_DIM);
+  }
+}
+
+skewInput.addEventListener('input', () => {
+  skew = Number(skewInput.value);
+  render();
+});
+
+document.getElementById('btn-compact').addEventListener('click', () => {
+  skew = Math.max(0, skew - 35);
+  skewInput.value = skew;
+  render();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  skew = 25;
+  skewInput.value = skew;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

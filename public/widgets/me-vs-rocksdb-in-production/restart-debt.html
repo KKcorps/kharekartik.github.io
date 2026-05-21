@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restart Debt</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.warn { border-color: #e6a64a; }
+  button.warn:hover { border-color: #e6a64a; color: #e6a64a; }
+  .stats {
+    display: flex; gap: 18px; font-size: 11px; color: #666; margin-top: 14px; flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .warn { color: #e6a64a; }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// restart debt meter</div>
+  <div class="widget-subtitle">add storage debt and restart to see why the bill arrives during recovery</div>
+
+  <svg id="main-svg" viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="18" fill="#666" font-size="10" font-family="IBM Plex Mono">LIVE SERVERS CAN CARRY COST THAT ONLY BECOMES OBVIOUS AT RESTART</text>
+    <g id="content"></g>
+    <rect x="40" y="340" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1" id="status-panel"/>
+    <text x="360" y="364" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">the process is live, but storage debt is still accumulating</text>
+    <text x="360" y="378" text-anchor="middle" fill="#555" font-size="9"
+          font-family="IBM Plex Mono" id="status-sub">restart turns file count, key count and snapshot quality into elapsed time</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-sst">add SST files</button>
+    <button id="btn-keys">add keys</button>
+    <button id="btn-snapshot" class="active">snapshot complete</button>
+    <button id="btn-restart" class="warn">restart</button>
+    <button id="btn-settle">pay down debt</button>
+  </div>
+  <div class="stats">
+    <div>sst files: <span id="stat-sst">0</span></div>
+    <div>primary keys: <span id="stat-keys">0</span></div>
+    <div>recovery estimate: <span id="stat-recovery">0m</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const content = document.getElementById('content');
+const statusPanel = document.getElementById('status-panel');
+const statusText = document.getElementById('status-text');
+const statusSub = document.getElementById('status-sub');
+const snapshotButton = document.getElementById('btn-snapshot');
+const statSst = document.getElementById('stat-sst');
+const statKeys = document.getElementById('stat-keys');
+const statRecovery = document.getElementById('stat-recovery');
+
+let sstFiles = 48;
+let primaryKeys = 220;
+let snapshotComplete = true;
+let restarting = false;
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function recoveryMinutes() {
+  const fileCost = sstFiles * (sstFiles > 120 ? 0.22 : 0.12);
+  const keyCost = snapshotComplete ? primaryKeys * 0.012 : primaryKeys * 0.06;
+  const rebuildPenalty = snapshotComplete ? 0 : 32;
+  return Math.round(fileCost + keyCost + rebuildPenalty);
+}
+
+function healthColor(value, warnAt, failAt) {
+  if (value >= failAt) return '#e64a4a';
+  if (value >= warnAt) return '#e6a64a';
+  return ACCENT;
+}
+
+function drawDebtBar(label, y, value, max, warnAt, failAt, suffix) {
+  const x = 58;
+  const w = 440;
+  const h = 22;
+  const pct = Math.min(1, value / max);
+  const color = healthColor(value, warnAt, failAt);
+  addText(content, x, y - 8, label, { fill: '#666', size: '10' });
+  content.appendChild(makeSvgEl('rect', {
+    x, y, width: w, height: h, rx: 3, fill: '#111', stroke: '#222', 'stroke-width': 1
+  }));
+  content.appendChild(makeSvgEl('rect', {
+    x, y, width: w * pct, height: h, rx: 3, fill: color, opacity: 0.72
+  }));
+  addText(content, x + w + 14, y + 15, `${value}${suffix}`, { fill: color, size: '10' });
+}
+
+function drawPathNode(x, label, sub, state) {
+  const nodeW = 106;
+  const color = state === 'active' ? ACCENT : state === 'warn' ? '#e6a64a' : state === 'error' ? '#e64a4a' : '#333';
+  const fill = state === 'active' ? ACCENT_FILL : state === 'error' ? '#1a0a0a' : 'none';
+  content.appendChild(makeSvgEl('rect', {
+    x, y: 236, width: nodeW, height: 58, rx: 3, fill, stroke: color, 'stroke-width': state === 'idle' ? 1 : 1.5
+  }));
+  addText(content, x + nodeW / 2, 259, label, { fill: state === 'idle' ? '#555' : color, size: '10', anchor: 'middle' });
+  addText(content, x + nodeW / 2, 278, sub, { fill: state === 'idle' ? '#444' : '#888', size: '8', anchor: 'middle' });
+}
+
+function drawRestartPath(minutes) {
+  const xs = [48, 184, 320, 456, 592];
+  const snapshotState = snapshotComplete ? 'active' : 'error';
+  const rebuildState = snapshotComplete ? 'idle' : 'error';
+  const openFilesState = restarting ? (sstFiles > 120 ? 'warn' : 'active') : 'idle';
+  const doneState = restarting ? (minutes > 45 ? 'warn' : 'active') : 'idle';
+  drawPathNode(xs[0], 'restart', 'process opens DB', restarting ? 'active' : 'idle');
+  drawPathNode(xs[1], 'snapshot', snapshotComplete ? 'load state' : 'missing data', restarting ? snapshotState : 'idle');
+  drawPathNode(xs[2], 'rebuild', snapshotComplete ? 'mostly skipped' : 'scan persisted keys', restarting ? rebuildState : 'idle');
+  drawPathNode(xs[3], 'open files', `${sstFiles} SSTs`, openFilesState);
+  drawPathNode(xs[4], 'return', `${minutes}m estimate`, doneState);
+  xs.slice(0, 4).forEach((x, i) => {
+    const nextX = xs[i + 1];
+    content.appendChild(makeSvgEl('line', {
+      x1: x + 106, y1: 265, x2: nextX, y2: 265,
+      stroke: restarting ? ACCENT_DIM : '#333', 'stroke-width': 1
+    }));
+    content.appendChild(makeSvgEl('polygon', {
+      points: `${nextX},265 ${nextX - 6},261 ${nextX - 6},269`,
+      fill: restarting ? ACCENT_DIM : '#333'
+    }));
+  });
+}
+
+function renderStatus(minutes) {
+  if (restarting && !snapshotComplete) {
+    statusText.textContent = 'restart fell off the fast path because the snapshot cannot be trusted';
+    statusSub.textContent = 'recovery now rebuilds primary key state from persisted data';
+    statusText.setAttribute('fill', '#e64a4a');
+    statusPanel.setAttribute('stroke', '#e64a4a');
+  } else if (restarting && minutes > 45) {
+    statusText.textContent = 'restart is technically working, but the operational window is gone';
+    statusSub.textContent = 'file count and key count turned hidden debt into elapsed recovery time';
+    statusText.setAttribute('fill', '#e6a64a');
+    statusPanel.setAttribute('stroke', '#e6a64a');
+  } else if (restarting) {
+    statusText.textContent = 'restart can use the snapshot, then pay file open and metadata warmup cost';
+    statusSub.textContent = 'the bill is visible now, but smaller while snapshots are complete';
+    statusText.setAttribute('fill', ACCENT);
+    statusPanel.setAttribute('stroke', ACCENT_DIM);
+  } else {
+    statusText.textContent = 'the process is live, but storage debt is still accumulating';
+    statusSub.textContent = 'restart turns file count, key count and snapshot quality into elapsed time';
+    statusText.setAttribute('fill', '#888');
+    statusPanel.setAttribute('stroke', '#222');
+  }
+}
+
+function render() {
+  content.innerHTML = '';
+  snapshotButton.classList.toggle('active', snapshotComplete);
+  snapshotButton.textContent = snapshotComplete ? 'snapshot complete' : 'snapshot incomplete';
+  const minutes = recoveryMinutes();
+  drawDebtBar('SST files and metadata', 54, sstFiles, 180, 90, 140, '');
+  drawDebtBar('primary keys to recover', 118, primaryKeys, 900, 420, 700, 'k');
+  drawDebtBar('estimated restart time', 182, minutes, 90, 35, 60, 'm');
+  drawRestartPath(minutes);
+  renderStatus(minutes);
+  statSst.textContent = sstFiles;
+  statKeys.textContent = `${primaryKeys}k`;
+  statRecovery.textContent = `${minutes}m`;
+  statSst.className = sstFiles > 140 ? 'del' : sstFiles > 90 ? 'warn' : '';
+  statKeys.className = primaryKeys > 700 ? 'del' : primaryKeys > 420 ? 'warn' : '';
+  statRecovery.className = minutes > 60 ? 'del' : minutes > 35 ? 'warn' : '';
+}
+
+document.getElementById('btn-sst').addEventListener('click', () => {
+  sstFiles = Math.min(190, sstFiles + 22);
+  restarting = false;
+  render();
+});
+
+document.getElementById('btn-keys').addEventListener('click', () => {
+  primaryKeys = Math.min(950, primaryKeys + 95);
+  restarting = false;
+  render();
+});
+
+snapshotButton.addEventListener('click', () => {
+  snapshotComplete = !snapshotComplete;
+  restarting = false;
+  render();
+});
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+  restarting = true;
+  render();
+});
+
+document.getElementById('btn-settle').addEventListener('click', () => {
+  sstFiles = Math.max(34, Math.round(sstFiles * 0.55));
+  primaryKeys = Math.max(160, Math.round(primaryKeys * 0.78));
+  restarting = false;
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

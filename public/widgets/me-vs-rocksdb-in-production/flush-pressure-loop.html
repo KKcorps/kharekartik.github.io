@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flush Pressure Loop</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 20px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.warn { border-color: #e6a64a; }
+  button.warn:hover { border-color: #e6a64a; color: #e6a64a; }
+  .stats {
+    display: flex; gap: 18px; font-size: 11px; color: #666; margin-top: 14px; flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .warn { color: #e6a64a; }
+  .stats .del { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// flush pressure loop</div>
+  <div class="widget-subtitle">add writes and partitions to see why a correct flush can still create tiny SST files</div>
+
+  <svg id="main-svg" viewBox="0 0 720 390" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="18" fill="#666" font-size="10" font-family="IBM Plex Mono">SHARED DB WRITE BUFFER</text>
+    <g id="buffer-bar"></g>
+    <text x="40" y="90" fill="#666" font-size="10" font-family="IBM Plex Mono">COLUMN FAMILY MEMTABLES</text>
+    <g id="memtables"></g>
+    <text x="502" y="90" fill="#666" font-size="10" font-family="IBM Plex Mono">NEW SST FILES</text>
+    <g id="sst-pile"></g>
+    <rect x="40" y="330" width="640" height="45" rx="3" fill="none" stroke="#222" stroke-width="1" id="status-panel"/>
+    <text x="360" y="354" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">healthy writes are accumulating in each local memtable</text>
+    <text x="360" y="368" text-anchor="middle" fill="#555" font-size="9"
+          font-family="IBM Plex Mono" id="status-sub">local flushes become useful SST files; global pressure may pick tiny memtables</text>
+  </svg>
+
+  <div class="controls">
+    <button id="btn-write">write batch</button>
+    <button id="btn-partitions">add partitions</button>
+    <button id="btn-pressure" class="warn">force global pressure</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>column families: <span id="stat-families">8</span></div>
+    <div>buffer used: <span id="stat-used">0</span></div>
+    <div>sst files: <span id="stat-sst">4</span></div>
+    <div>tiny flushes: <span class="del" id="stat-tiny">0</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+const DB_BUDGET = 320;
+const LOCAL_LIMIT = 100;
+const bufferBar = document.getElementById('buffer-bar');
+const memtables = document.getElementById('memtables');
+const sstPile = document.getElementById('sst-pile');
+const statusPanel = document.getElementById('status-panel');
+const statusText = document.getElementById('status-text');
+const statusSub = document.getElementById('status-sub');
+const statFamilies = document.getElementById('stat-families');
+const statUsed = document.getElementById('stat-used');
+const statSst = document.getElementById('stat-sst');
+const statTiny = document.getElementById('stat-tiny');
+
+let families = [32, 44, 26, 58, 35, 49, 28, 42];
+let sstFiles = 4;
+let tinyFlushes = 0;
+let lastFlush = { type: 'none', index: -1, size: 0 };
+
+function makeSvgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = makeSvgEl('text', {
+    x, y, fill: opts.fill || '#888', 'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono', 'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function usedMemory() {
+  return families.reduce((sum, value) => sum + value, 0);
+}
+
+function chooseTinyMemtable() {
+  let min = Infinity;
+  let idx = 0;
+  families.forEach((value, i) => {
+    if (value > 0 && value < min) {
+      min = value;
+      idx = i;
+    }
+  });
+  return idx;
+}
+
+function maybeFlush() {
+  const fullIdx = families.findIndex(value => value >= LOCAL_LIMIT);
+  if (fullIdx !== -1 && usedMemory() <= DB_BUDGET * 1.08) {
+    lastFlush = { type: 'local', index: fullIdx, size: families[fullIdx] };
+    families[fullIdx] = 0;
+    sstFiles += 1;
+    return;
+  }
+  if (usedMemory() > DB_BUDGET) {
+    const tinyIdx = chooseTinyMemtable();
+    lastFlush = { type: 'global', index: tinyIdx, size: families[tinyIdx] };
+    families[tinyIdx] = 0;
+    sstFiles += 1;
+    tinyFlushes += 1;
+    return;
+  }
+  lastFlush = { type: 'none', index: -1, size: 0 };
+}
+
+function drawBufferBar() {
+  const x = 40;
+  const y = 30;
+  const w = 640;
+  const h = 24;
+  const used = usedMemory();
+  const pct = Math.min(1, used / DB_BUDGET);
+  const color = used > DB_BUDGET ? '#e64a4a' : used > DB_BUDGET * 0.82 ? '#e6a64a' : ACCENT;
+
+  bufferBar.appendChild(makeSvgEl('rect', {
+    x, y, width: w, height: h, rx: 3, fill: '#111', stroke: '#222', 'stroke-width': 1
+  }));
+  bufferBar.appendChild(makeSvgEl('rect', {
+    x, y, width: w * pct, height: h, rx: 3, fill: color, opacity: 0.72
+  }));
+  addText(bufferBar, x + 8, y + 16, `${used} / ${DB_BUDGET} units`, {
+    fill: used > DB_BUDGET ? '#0a0a0a' : '#e0e0e0', size: '10'
+  });
+  addText(bufferBar, x + w, y + 44, 'global limit', { fill: '#666', size: '9', anchor: 'end' });
+}
+
+function drawMemtables() {
+  const maxVisible = 18;
+  const visible = families.slice(0, maxVisible);
+  const x0 = 40;
+  const y0 = 112;
+  const cellW = 68;
+  const cellH = 56;
+  const gap = 8;
+  const cols = 6;
+  visible.forEach((value, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = x0 + col * (cellW + gap);
+    const y = y0 + row * (cellH + gap);
+    const pct = Math.min(1, value / LOCAL_LIMIT);
+    const isFlushed = i === lastFlush.index;
+    const stroke = isFlushed ? (lastFlush.type === 'global' ? '#e64a4a' : ACCENT) : '#333';
+    const fill = isFlushed ? (lastFlush.type === 'global' ? '#1a0a0a' : ACCENT_FILL_DARK) : 'none';
+
+    memtables.appendChild(makeSvgEl('rect', {
+      x, y, width: cellW, height: cellH, rx: 3, fill, stroke, 'stroke-width': isFlushed ? 1.5 : 1
+    }));
+    memtables.appendChild(makeSvgEl('rect', {
+      x: x + 6, y: y + cellH - 8 - Math.max(2, 34 * pct), width: cellW - 12,
+      height: Math.max(2, 34 * pct), rx: 2, fill: pct > 0.9 ? '#e6a64a' : ACCENT_FILL,
+      stroke: pct > 0.9 ? '#e6a64a' : ACCENT_DIM, 'stroke-width': 1
+    }));
+    addText(memtables, x + 6, y + 13, `cf ${i + 1}`, { fill: '#666', size: '9' });
+    addText(memtables, x + cellW - 6, y + 47, value, {
+      fill: isFlushed ? stroke : '#888', size: '10', anchor: 'end'
+    });
+  });
+
+  if (families.length > maxVisible) {
+    addText(memtables, 40, 306, `plus ${families.length - maxVisible} more column families`, {
+      fill: '#666', size: '10'
+    });
+  }
+}
+
+function drawSstPile() {
+  const x0 = 502;
+  const y0 = 112;
+  const cols = 7;
+  const count = Math.min(42, sstFiles);
+  for (let i = 0; i < count; i++) {
+    const x = x0 + (i % cols) * 24;
+    const y = y0 + Math.floor(i / cols) * 25;
+    const isNew = i === count - 1 && lastFlush.type !== 'none';
+    const isTiny = isNew && lastFlush.type === 'global';
+    sstPile.appendChild(makeSvgEl('rect', {
+      x, y, width: isTiny ? 12 : 20, height: 18, rx: 2,
+      fill: isTiny ? '#1a0a0a' : ACCENT_FILL_DARK,
+      stroke: isTiny ? '#e64a4a' : (isNew ? ACCENT : '#333'),
+      'stroke-width': isNew ? 1.5 : 1
+    }));
+  }
+  addText(sstPile, x0, 285, sstFiles > 42 ? `${sstFiles} total files` : `${sstFiles} files`, {
+    fill: '#888', size: '10'
+  });
+}
+
+function renderStatus() {
+  if (lastFlush.type === 'global') {
+    statusText.textContent = `global pressure flushed cf ${lastFlush.index + 1} after only ${lastFlush.size} units`;
+    statusSub.textContent = 'the write buffer was relieved, but one more tiny SST and metadata entry were created';
+    statusText.setAttribute('fill', '#e64a4a');
+    statusPanel.setAttribute('stroke', '#e64a4a');
+    return;
+  }
+  if (lastFlush.type === 'local') {
+    statusText.textContent = `cf ${lastFlush.index + 1} filled its own memtable and flushed a useful ${lastFlush.size} unit file`;
+    statusSub.textContent = 'this is the shape RocksDB wants: one meaningful memory drain becomes one useful SST';
+    statusText.setAttribute('fill', ACCENT);
+    statusPanel.setAttribute('stroke', ACCENT_DIM);
+    return;
+  }
+  if (usedMemory() > DB_BUDGET * 0.82) {
+    statusText.textContent = 'shared buffer is almost full; the next write may force a pressure flush';
+    statusSub.textContent = 'with many column families, some flushable memtables are still too small to help';
+    statusText.setAttribute('fill', '#e6a64a');
+    statusPanel.setAttribute('stroke', '#e6a64a');
+    return;
+  }
+  statusText.textContent = 'healthy writes are accumulating in each local memtable';
+  statusSub.textContent = 'local flushes become useful SST files; global pressure may pick tiny memtables';
+  statusText.setAttribute('fill', '#888');
+  statusPanel.setAttribute('stroke', '#222');
+}
+
+function render() {
+  bufferBar.innerHTML = '';
+  memtables.innerHTML = '';
+  sstPile.innerHTML = '';
+  drawBufferBar();
+  drawMemtables();
+  drawSstPile();
+  renderStatus();
+  statFamilies.textContent = families.length;
+  statUsed.textContent = usedMemory();
+  statUsed.className = usedMemory() > DB_BUDGET ? 'del' : usedMemory() > DB_BUDGET * 0.82 ? 'warn' : '';
+  statSst.textContent = sstFiles;
+  statTiny.textContent = tinyFlushes;
+}
+
+document.getElementById('btn-write').addEventListener('click', () => {
+  families = families.map((value, i) => Math.min(115, value + 8 + (i % 4) * 5));
+  maybeFlush();
+  render();
+});
+
+document.getElementById('btn-partitions').addEventListener('click', () => {
+  const start = families.length;
+  for (let i = 0; i < 6; i++) families.push(10 + ((start + i) % 5) * 7);
+  maybeFlush();
+  render();
+});
+
+document.getElementById('btn-pressure').addEventListener('click', () => {
+  families = families.map((value, i) => Math.min(92, value + 18 + (i % 3) * 4));
+  while (usedMemory() <= DB_BUDGET) families[chooseTinyMemtable()] += 9;
+  maybeFlush();
+  render();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  families = [32, 44, 26, 58, 35, 49, 28, 42];
+  sstFiles = 4;
+  tinyFlushes = 0;
+  lastFlush = { type: 'none', index: -1, size: 0 };
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

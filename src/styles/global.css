@@ -163,6 +163,8 @@ svg {
 }
 
 .mermaid-canvas {
+	display: grid;
+	justify-items: center;
 	width: calc(var(--mermaid-scale) * 100%);
 	min-width: 100%;
 	margin: 0 auto;
@@ -174,10 +176,17 @@ svg {
 	background: transparent !important;
 }
 
+.mermaid-figure .mermaid {
+	width: max-content;
+	max-width: 100%;
+	margin: 0 auto;
+}
+
 .mermaid-figure .mermaid svg {
 	display: block;
 	height: auto;
 	max-width: none;
+	margin: 0 auto;
 }
 
 a {
