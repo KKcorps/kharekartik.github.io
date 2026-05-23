@@ -11,19 +11,11 @@ tags:
 featured: false
 ---
 
-I remember the first RocksDB log line that made the scale problem impossible to ignore.
+At smaller scale, RocksDB had mostly done what I needed. It kept large key state out of the JVM heap, gave me local persistence and made point lookups fast enough to not regret moving away from hashmaps. That is a separate story for another day.
 
-At smaller scale, RocksDB had mostly done what I needed. It kept large key state out of the JVM heap, gave me local persistence and made point lookups fast enough that I could treat it like a solid embedded store.
+Then Jevons paradox struck. Once we were no longer bounded by memory, usage grew: more logical partitions per server, more column families, more keys, more files, more cleanup work and more state to recover when pods got replaced. Eventually we crossed 1 billion keys per server, not counting write amplification. At that scale we started seeing weird production issues and multiple RCAs traced back to RocksDB doing something surprising.
 
-Then the workload crossed a line: more logical partitions per server, more column families, more keys, more files, more cleanup work and more state to recover on restart. None of those changes sounded dramatic in isolation. Together, they turned RocksDB's internal housekeeping into production behavior I had to care about directly.
-
-The first obvious symptom was boring. One server was hot, writes were slowing down and reads were starting to look unhealthy. Production systems get overloaded all the time, so the first version of every incident story is usually some useless sentence like "the box is unhappy."
-
-Then I looked at the RocksDB event log and saw that it was flushing only a couple of entries at a time.
-
-That should have been impossible in the practical sense, even if it was perfectly legal in the technical one. RocksDB was doing the thing I wanted it to do, flushing memory to disk, but the flushes were so tiny that they were not relieving pressure. They were creating more files, more metadata and more future work.
-
-That is the shape of this whole story. RocksDB did not suddenly become bad. The workload got large enough that its internal tradeoffs stopped being hidden.
+In this post I will walk through some of those issues and what you can do to avoid them.
 
 ---
 
