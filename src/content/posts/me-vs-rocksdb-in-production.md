@@ -11,19 +11,25 @@ tags:
 featured: false
 ---
 
-At smaller scale, RocksDB had mostly done what I needed. It kept large key state out of the JVM heap, gave me local persistence and made point lookups fast enough to not regret moving away from hashmaps. That is a separate story for another day.
+When I integrated RocksDB in our main product, it had mostly done what I needed. It kept large key state out of the JVM heap, gave me local persistence and made point lookups fast enough to not regret moving away from hashmaps (That is a separate story for another day)
 
-Then Jevons paradox struck. Once we were no longer bounded by memory, usage grew: more logical partitions per server, more column families, more keys, more files, more cleanup work and more state to recover when pods got replaced. Eventually we crossed 1 billion keys per server, not counting write amplification. At that scale we started seeing weird production issues and multiple RCAs traced back to RocksDB doing something surprising.
+Now that we were no longer bounded by memory, we started promoting more usecases for our shiny new datastore. This led to more logical partitions per server, more column families, more keys, more files, more cleanup work and more state to recover when pods got replaced. Eventually we crossed 1 billion keys per server in some of our envs, not counting write amplification. At that scale we started seeing weird production issues and multiple RCAs traced back to RocksDB doing something surprising.
 
-In this post I will walk through some of those issues and what you can do to avoid them.
+Being in this rocksdb minefield over the last few years has taught me a lot.
+
+In this post I will walk through some of those issues and what you can do to avoid them from the get go.
 
 ---
 
 ## A flush can be correct and still useless
 
-Instead of healthy flushes writing meaningful chunks of data, the event log showed flushes triggered by `Write Buffer Manager` that wrote only a handful of entries.
+RocksDB is a write optimised database as envisioned by its creators. And where can we write the data fastest? Yes, the memory. But to scale we can't store all of our data in memory (unless you've a million dollars to afford redis). To tackle this, Rocksdb has this neat mechanism called Flush. 
 
-This is the sanitized shape of the log that made me stop treating this as a generic slow node:
+Flush simply takes data written into memory in a data structure called a memtable aka write buffers and simply dumps that to disk with barely any changes. You can control how many write buffers RocksDB can keep in memory per partition and what should be the max size of each. But what if your partitions grow? How do you control memory across them? Well for that we can set a global threshold as well on write buffer memory usage. When you set this, RocksDB creates an instance of `Write Buffer Manager` that maintain pointers to all write buffers and can trigger flush on any one of them if it sees memory usage nearing threshold. 
+
+The issue we observed at scale was something like this, instead of healthy flushes writing approx the size of write buffers (generally tens of MBs), the event log showed flushes triggered by `Write Buffer Manager` that wrote only a handful of entries (almost in few KBs). This kep occuring too frequently like 1000s of flushes every minute which led to a huge CPU spike and stalled every operation on our cluster. 
+
+The log that led me to this root cause was something like this in RocksDB logs:
 
 ```text
 EVENT_LOG_v1 {
@@ -36,11 +42,7 @@ EVENT_LOG_v1 {
 }
 ```
 
-That is the kind of log line that looks small until it explains the whole incident.
-
-In the healthy case, a column family fills its local write buffer and flushes because it is full. That produces an SST file that represents real progress. The engine drains useful memory, writes a sensible file and moves on.
-
-The healthy comparison was not subtle:
+The healthy case however should look something like this:
 
 ```text
 EVENT_LOG_v1 {
@@ -53,11 +55,9 @@ EVENT_LOG_v1 {
 }
 ```
 
-That contrast changed the investigation. I was no longer looking at "flushes are happening." I was looking at the difference between flushing three entries because a global manager was under pressure and flushing more than a million entries because one column family had actually filled its write buffer.
+In the unhealthy case, the shared DB write buffer budget gets hit first and RocksDB starts flushing because of global pressure. With enough column families, that can make it choose memtables that are technically flushable but practically useless to flush. 
 
-In the unhealthy case, the shared DB write buffer budget gets hit first and RocksDB starts flushing because of global pressure. With enough column families, that can make it choose memtables that are technically flushable but practically useless to flush.
-
-The engine is doing work, but the work is pointed at the wrong thing.
+The engine is doing work but the work is pointed at the wrong thing.
 
 ```mermaid
 flowchart TB
@@ -72,13 +72,9 @@ flowchart TB
 
 <iframe src="/widgets/me-vs-rocksdb-in-production/flush-pressure-loop.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
-That loop is the dangerous part. Tiny flushes become a file count problem and file count problems never stay local.
-
-Once RocksDB starts generating a large number of small SST files, reads have more files to search, filters and indexes multiply, compactions get heavier, cache composition changes and tail latency starts drifting. Background maintenance begins competing harder with foreground work, which makes the next round of maintenance more expensive.
+Apart from the CPU spike it leads to much more severe issues down the line. Once RocksDB starts generating a large number of small SST files, reads have more files to search, filters and indexes multiply, compactions get heavier, cache composition changes and tail latency starts drifting. Background maintenance begins competing harder with foreground work, which makes the next round of maintenance more expensive.
 
 In one of the more memorable incidents I worked through, a sick server had an absurdly higher SST count than a healthy peer. That single difference explained a lot of behavior that had looked mysterious from the outside. The server was not cursed, it was carrying around a fragmented, metadata heavy view of the world.
-
-That was the moment file count stopped being trivia for me and became a direct signal for whether RocksDB was still in a healthy physical shape.
 
 ## Averages hid the worst partition
 
@@ -86,7 +82,7 @@ The next scale problem was skew.
 
 It is easy to miss because the cluster level graph can still look reasonable while one logical partition is quietly becoming a different storage problem from all its peers. The average says the system is fine. The outlier is where the incident lives.
 
-I saw cases where one partition had more than 130 files sitting at L6 while other partitions looked normal. The expected number for that shape was closer to four or five files, and one column family had crossed 900 SSTs in total. That meant more metadata, more filter and index footprint, worse cache pressure, more compaction backlog and uglier long tail reads for that one slice of the workload.
+I saw cases where one partition had more than 130 files sitting at L6 while other partitions looked normal. The expected number for that shape was closer to four or five files and one column family had crossed 900 SSTs in total. That meant more metadata, more filter and index footprint, worse cache pressure, more compaction backlog and uglier long tail reads for that one slice of the workload.
 
 There was an even louder version of the same lesson in another comparison, where a healthy peer had 49 SST files and the unhealthy node had 571,850. That number is absurd enough that it almost stops looking real, but it was exactly why average cluster graphs were useless for this failure mode.
 
@@ -94,51 +90,9 @@ This was not just "more data." It was a deeper LSM shape, with more files to sea
 
 The fix path changed once I saw the skew clearly. Bigger cache might help, but it was not the whole answer. I had to care about `max_open_files`, background thread count, compaction thresholds, target file sizes, level count and whether the data distribution itself was making one partition carry a completely different physical layout.
 
-That is the part averages hide. RocksDB performance is often dictated by the worst shaped partition, not the median one.
+We took time to catch both of these issues because we were measuring average get, write, flush and compaction latency. While these only reflect in p90. 
 
 <iframe src="/widgets/me-vs-rocksdb-in-production/lsm-skew-map.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
-
-## Capacity math was hiding in plain sight
-
-The setup behind the tiny flush pattern was simple in retrospect.
-
-The server had many logical partitions. Each partition mapped to a RocksDB column family. Each column family had a local write buffer budget. The DB also had a shared global write buffer budget.
-
-As long as flushes happened because a column family hit its own local threshold, things were mostly sane. Once the shared global budget was hit, RocksDB started flushing because of `Write Buffer Manager` instead.
-
-That led to the rule of thumb I now reach for whenever this shape shows up:
-
-```text
-number_of_partitions * partition_buffer_size ~= db_buffer_size
-```
-
-The equation is not magic, but it is useful because it forces the uncomfortable question: is the global write buffer budget compatible with the number of column families I am asking RocksDB to manage?
-
-The numbers from the incident made the mismatch hard to ignore:
-
-```text
-global DB write buffer limit:       5.37 GiB
-sum of column family settings:      >113 GiB
-actual RocksDB memory observed:     ~18 GiB
-actual/global ratio:                ~334%
-estimated total memory demand:      ~45 GiB on a 32 GiB node
-active column families observed:    74 to 107
-```
-
-That was the proof that the JVM graphs were not lying, they were just answering the wrong question. The dangerous memory was in the embedded native engine, table readers, caches and memtables, not only in Java heap.
-
-The same lesson shows up in more dramatic form with memory overcommit. If thousands of partitions each imply a memtable budget, the total demand can exceed server memory before the table ever takes real traffic. That is not a runtime mystery. It is arithmetic that should have happened at admission time.
-
-```text
-required_memory = partitions * memtable_budget * safety_factor
-
-if required_memory > server_budget:
-  reject("RocksDB memtable budget does not fit on this server")
-```
-
-The best version of this incident is not a page. It is a failed config update with a structured error that names the shortfall and the knob that created it.
-
-That was one of the places where my thinking moved from tuning to control loops. A lot of RocksDB pain was not unknowable. The system already had the inputs. The missing part was code that made the decision before a human had to stare at a dashboard.
 
 ## The cache lied in three different ways
 
@@ -152,19 +106,7 @@ One incident started as restart slowness. A server was taking far too long to co
 
 That forced the obvious question: why is RocksDB going to files so often if we gave it a large cache?
 
-The answer was painful because the effective cache was tiny.
-
-The cluster config said the block cache was large. The RocksDB stats dump showed only a few megabytes of capacity:
-
-```text
-Block cache LRUCache ... capacity: 8.00 MB
-```
-
-Once I saw that line, the incident changed category. This was no longer a tuning problem because it was an integration bug. The block based table format options were not being propagated correctly into the effective column family options, so the config everyone trusted was not the config RocksDB was actually running with.
-
-That changed how I debug storage issues. If a RocksDB knob matters, I want to see it reflected in the options dump, the stats log, the effective cache capacity and the bloom filter counters. Otherwise it does not exist, no matter what the control plane says.
-
-The second cache failure was subtler. The cache setting was real, but the useful cache was not. Reads were still expensive because filter and index blocks were taking most of the space, leaving data blocks unable to stay hot.
+I checked the logs if cache size was even getting honoured and it was. However, I went deeper and found what was actually occupying this cache. 
 
 The cache evidence looked like this:
 
@@ -194,16 +136,6 @@ That made point lookups more expensive than I had imagined. A cache miss was not
 
 Native profiling around `BlockPrefixIndex` made this concrete. Once I saw CPU burning inside block level index creation, I understood that "cache miss" was a much larger sentence than I had been saying out loud.
 
-The third cache failure was bloom filters showing up on both sides of the ledger.
-
-In some incidents, bloom filters were not being used or not being honored the way I expected. That meant point lookups paid too much file level search cost, which made the fix matter materially.
-
-In other incidents, bloom filters were present and working but had become part of the problem. Bloom filters live per SST file. If file count explodes, filter count and filter footprint explode with it. The same mechanism that should accelerate lookups can help crowd out the data blocks that make those lookups cheap.
-
-That is why "increase block cache" and "enable bloom filters" are not wrong, but they are incomplete. The real questions are whether the cache exists, what lives inside it, whether filters are actually used and whether the dominant pain is still foreground reads at all.
-
-Sometimes the real bottleneck had already moved to compaction, cleanup or pending background work. At that point, a bigger cache can help locally while failing to move the system.
-
 ## The hot path was not always the foreground path
 
 Some of the later incidents corrected my instinct in a different way.
@@ -229,30 +161,15 @@ The uncomfortable lesson was that RocksDB can make the foreground path look guil
 
 ## Cleanup was wearing a fake mustache
 
-The most expensive mistake I made around cleanup was treating it like housekeeping.
+The most expensive mistake I made around cleanup was treating it like regular operations
 
-I assumed retention, shard deletion, TTL removal and stale state cleanup lived in the background. Important, yes, but still secondary to reads and writes.
-
-That assumption did not survive contact with real production workloads.
+I assumed retention, shard deletion, TTL removal and stale state cleanup etc. would just happen like normal gets and puts in RocksDB. At the end of the day, deletes are basically writes inside Rocksdb with a tombstone value. That assumption did not survive contact with real production workloads.
 
 One of the first incidents that forced this on me was a periodic CPU spike tied to retention activity. At first, it looked like a mystery. CPU would spike on a cadence, writes would feel worse and progress would stall in places where it should not stall.
 
-Then we looked at thread activity and the answer stopped being mysterious. State transition threads were burning CPU while removing old shards.
+Then we looked at thread activity and the answer stopped being mysterious. State transition threads were burning CPU while removing old keys. The problem with deletion is unlike writes, *all of them happen in a single go e.g. deleting a file that removes 10 million keys at once.*
 
-That sounds harmless until you understand what shard removal meant. It did not just mark metadata and move on. It iterated valid records in the shard, reconstructed each key, called RocksDB `get()`, checked whether the mapping still pointed at the shard being removed, possibly called RocksDB `delete()` and repeated that path millions of times.
-
-That is not cleanup in the colloquial sense. That is a storage workload running on a critical control plane thread.
-
-The metric only version of the proof was boring in the best possible way:
-
-```text
-delete heavy operation family A: 569394 keys
-delete heavy operation family B: 19635 keys
-successful async cleanup:       4236 stale keys in 22 ms
-post restart stale key warning: 45 keys
-```
-
-Those numbers made cleanup visible as a workload, not a moral category. The expensive part was not deciding that old keys should go away. The expensive part was asking RocksDB to delete enough of them while the rest of the system still needed to make progress.
+The expensive part was not deciding that old keys should go away. The expensive part was asking RocksDB to delete enough of them while the rest of the system still needed to make progress.
 
 ```mermaid
 flowchart TB
@@ -271,15 +188,13 @@ flowchart TB
 
 <iframe src="/widgets/me-vs-rocksdb-in-production/cleanup-critical-path.html" width="100%" height="610" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
-The fix was not "optimize cleanup harder" in the narrow sense. The fix was to move expensive cleanup work off the critical path.
+The fix was to move expensive cleanup work off the critical path.
 
-That led to a much better framing. Perform the minimum required state transition work synchronously, defer heavy RocksDB cleanup into a separate manager, free critical threads sooner and let writes continue.
+That led to a much better framing. Perform the minimum required state transition work synchronously, defer heavy RocksDB cleanup into a separate manager that is ideally *single threaded and rate limited*, free critical threads sooner and let writes continue.
 
 There is still a tradeoff because deferred cleanup can leave garbage state around longer. But that is a better trade than letting old state removal block critical runtime progress.
 
 The deeper lesson was that background work is only harmless if it is actually isolated, paced correctly, unable to starve the critical path and unable to accumulate into a backlog that changes the storage shape.
-
-With RocksDB backed local state, those conditions were not automatic.
 
 ## The restart path collected every unpaid bill
 
