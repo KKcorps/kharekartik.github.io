@@ -70,7 +70,7 @@ flowchart TB
   G --> C
 ```
 
-<iframe src="/widgets/me-vs-rocksdb-in-production/flush-pressure-loop.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+<iframe src="/widgets/me-vs-rocksdb-in-production/flush-pressure-loop.html" width="100%" height="590" style="border: 1px solid #222; border-radius: 6px; background:rgb(221, 147, 147);" loading="lazy"></iframe>
 
 Apart from the CPU spike it leads to much more severe issues down the line. Once RocksDB starts generating a large number of small SST files, reads have more files to search, filters and indexes multiply, compactions get heavier, cache composition changes and tail latency starts drifting. Background maintenance begins competing harder with foreground work, which makes the next round of maintenance more expensive.
 
@@ -198,12 +198,6 @@ The deeper lesson was that background work is only harmless if it is actually is
 
 ## The restart path collected every unpaid bill
 
-I used to think of restarts as reset buttons.
-
-If a RocksDB backed server got into a bad state, a restart felt like a clean escape hatch. Rebuild, warm up and move on. Operationally, that can be true, which is part of why the trap is easy.
-
-Over time, I learned the harsher version: restarts do not erase storage debt, they reveal it.
-
 A live RocksDB server can limp along with too many SST files, poor cache composition, tombstone debt, too many primary keys, snapshots that are not as complete as I think and cleanup that has already fallen behind.
 
 As long as the process stays up, those costs are distributed over time. The server can remain technically alive while carrying a terrible internal shape.
@@ -225,71 +219,19 @@ flowchart TB
 
 <iframe src="/widgets/me-vs-rocksdb-in-production/restart-debt.html" width="100%" height="600" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
-Primary key count stopped being a side metric for me and became a capacity metric. It predicted restart time, snapshot usefulness, cleanup cost, compaction burden and memory pressure.
+I tried tuning a lot of configs, like using Vector memtables instead of skip ones or increasing rocksdb flush and compaction threads. However, that did not lead to much benefit when loading up more than a billion keys on restart.
 
-That lesson hit especially hard when restart cost was much more tightly coupled to total key state and key size than to the raw data bytes users usually think about.
+Then I found out that RocksDB's `level_compaction_dynamic_level_bytes` option is the recommended default starting in 8.4 and it changes how level targets are computed. Instead of trying to keep every level populated in the old fixed ladder shape, RocksDB can keep lower levels effectively empty and push data straight toward the first level with a valid target, which often means the bottom level.
 
-The proof was not subtle here either:
+That is a good default for many workloads but was a curse for me. After restart, I could see files sitting at L6 and not getting compacted into the shape I expected. The database was not broken, it was following the newer leveled compaction model while my operational expectation still assumed the older layout. Me increasing compaction threads had no effect since rocksdb never thought it had to compact anything.
 
-```text
-dataset family size:       ~3B keys
-time to come online:       ~30h
-major CPU time:            RocksDB
-effective block cache:     8 MiB instead of intended 1 GiB
+This led to another problem, the rocksdb get latency started climbing. Increasing block cache size did not help in this case at all. Why? cause we simply had way too many sstable files (since no compaction was happening). Rocksdb has this table reader cache that keeps pointers to all these files so that we can read one quickly. We had limited this cache to 1024 files. Once the number of pointers exceed this limit, rocksdb closes the sstable files. And reopening one is extremely expensive since it then has to decompress the files, parse and load its index and filters into memory. This happening on every get call would blow up even your p50 latency.
 
-different startup case:
-keys per node:             ~310M
-startup before tuning:     >3h
-startup after tuning:      <1h
-```
-
-That changed how I looked at readiness timeouts. Increasing patience around startup can be operationally necessary, but it does not change the fact that recovery has become a data structure problem.
-
-Snapshots changed category too because they were not just a performance optimization. They were part of the recovery contract. When snapshots were complete and trustworthy, restarts could be manageable. When snapshots were missing data, stale, skipped by fallback paths or built with regressions, restart quietly turned into rebuild from first principles.
-
-The other sharp edge here was newer RocksDB compaction behavior. RocksDB's `level_compaction_dynamic_level_bytes` option is the recommended default starting in 8.4 and it changes how level targets are computed. Instead of trying to keep every level populated in the old fixed ladder shape, RocksDB can keep lower levels effectively empty and push data straight toward the first level with a valid target, which often means the bottom level.
-
-That is a good default for many workloads because it controls space amplification, but it surprised me at this scale. After restart, I could see files sitting at L6 and not getting compacted into the shape I expected. The database was not broken, it was following the newer leveled compaction model while my operational expectation still assumed the older layout.
-
-The latency symptom looked like a read problem, but the fix was not another cache tweak. The only practical way out was to raise `max_open_files` enough that RocksDB could keep the large working set of SSTs open instead of constantly paying file open and table cache churn. That made `max_open_files` stop feeling like a boring resource limit and start feeling like part of the recovery budget.
-
-The phrase I use in my head now is the primary key wall. It is not one clean threshold where everything instantly fails. It is the point after which every operational activity gets more expensive: cleanup touches more state, compaction has more to reorganize, snapshots become more critical, restart becomes more punishing and memory budgets get tighter.
-
-You can operate past that point for a while. The danger is that the system remains serviceable just long enough for everyone to normalize the growing cost.
-
-Then one day a restart or rebuild path needs to succeed inside a real operational window and all the hidden debt is due.
-
-## The right answer started looking like a controller
-
-After enough of these incidents, I became less interested in one off tuning advice.
-
-The pattern was too repeatable because every incident eventually collapsed into someone changing one number: `db_write_buffer_size`, `max_open_files`, `max_background_jobs`, `level0_file_num_compaction_trigger`, cache size or some related knob.
-
-The frustrating part was that the system often had enough signal before the page. L0 file count was rising, compaction pending bytes were visible, flush reasons were in logs, effective cache capacity was dumpable, primary key count was measurable and snapshot coverage could be checked.
-
-The missing piece was a deterministic loop.
-
-I do not mean asking a model what `max_background_jobs` should be. A stateful store taking live writes does not need a nondeterministic model in the decision path. Same inputs should produce the same output, with a rollback story and an audit trail.
-
-The controller shape I trust is boring:
-
-| Primitive | Why it matters |
-|---|---|
-| Admission math | Reject impossible configs before runtime turns them into incidents. |
-| Hysteresis | Require repeated bad samples before changing a live database knob. |
-| Cooldown | Let RocksDB settle before acting on the next metric sample. |
-| Kill switch | Give on call a boring way to stop automation without a redeploy. |
-| Action log | Record previous value, next value and reason before every mutation. |
-
-LLMs can still help around that loop. They can draft controller code, summarize prior incidents and write human readable explanations for why a controller acted.
-
-But the loop itself needs deterministic code because the thing being tuned is holding live state.
-
-That is the cleanest way I can state the lesson: deterministic in the loop, language at the edges.
+The only practical way out was to raise `max_open_files` enough that RocksDB could keep the large working set of SSTs open instead of constantly paying file open and table cache churn. 
 
 ## Native crashes were a different warning
 
-The later class of problems did not look like tuning at all.
+The later class of problems did not look like a configuration screw up but mostly the native rocksdb code finally showing its true colors.
 
 I started seeing shutdown and safe close issues where the process could hit native `SIGSEGV` paths around RocksDB lifecycle handling. That is a different category of pain from slow reads or compaction debt. It is what happens when an embedded native engine lives inside a larger managed process and the ownership rules are not perfectly boring.
 
@@ -320,5 +262,3 @@ Those questions are about fit, not brand.
 My honest answer is not that RocksDB was the wrong choice. My honest answer is that RocksDB kept solving real problems while making the cost of owning it visible.
 
 Once that happens, the mature question is not how to tune it more. It is whether this is still the layer we want to become experts in.
-
-A boring footnote I keep next to all of this: memory budgeting has to be done for the whole process, not one knob at a time. JVM heap, block cache, write buffers and native overhead all spend from the same envelope, even if every config page pretends they are separate worlds.
