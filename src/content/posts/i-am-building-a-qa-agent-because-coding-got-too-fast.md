@@ -51,7 +51,7 @@ flowchart LR
 
 ## Getting the agent split right
 
-The agent split only started making sense once I stopped treating them like a wrapper on skills but more like a single unit of work that could be done in paralle without rotting the context of main agent. 
+The agent split only started making sense once I stopped treating them like a wrapper on skills but more like a single unit of work that could be done in parallel without rotting the context of main session. 
 
 The static risk lane reads the change and predicts where reality might disagree with the author's intent. It does not mutate the environment. Its job is to say "this config default changed", "this fallback path now matters" or "this old behavior might break if an existing user upgrades."
 
@@ -59,7 +59,7 @@ The context lane watches everything outside the code while the run is happening.
 
 The scenario lane is the one that actually drives the system. It creates state, feeds inputs, calls APIs, runs jobs, restarts components and checks the visible result. This is the lane that has to think like a user rather than a unit test.
 
-The witness lane is deliberately read only. It watches the same run from the side and asks whether the intended runtime path actually executed. Logs, metrics, live config and class loading evidence all belong here. This is really important so that a test that passes is verified to have actually excercised the code path instead of simply going another safe route and returning 200 ok.
+The witness lane is deliberately read only. It watches the same run from the side and asks whether the intended runtime path actually executed. Logs, metrics, live config and class loading evidence all belong here. I'll expand more on this later in this blog
 
 The fuzz lane comes later, after the deterministic scenarios are already believable. It's job is to run multiple cluster or table altering operations like pod restarts, table rebalance etc. in parallel and check that our state does not corrupt and invariants are preserved. It should not be like after restart we start getting different data in query response.
 
@@ -87,24 +87,22 @@ That split made the system easier to reason about. Agents answer "what work can 
 
 ## The boring CLI was the point
 
-The second correction was making the CLI boring.
+The second correction was making a CLI.
 
-I did not want the command line tool to become the brain of the system. The agents should decide what needs to be investigated. The reusable playbooks should describe how a class of investigation works. The CLI should just provide stable verbs for the repetitive parts that every serious verification run needs.
+I did not want the command line tool to become the brain of the system. The agents should decide what needs to be investigated. The reusable playbooks should describe how a class of investigation works. The goal of the CLI is to provide mostly a way to interact with our systems easily so that agent doesn't have to write a custom script or have deterministic fast paths for things like generating a test dataset. 
 
 That meant the CLI surface had to stay practical:
 
 ```text
-validate the framework
 generate deterministic data
 start a local environment
 run a query or request
 compare expected and actual output
 snapshot live state
 wait for a readiness condition
-record a learning proposal
 ```
 
-There is nothing magical in that list because that is the point. The interesting part is not the command names. The interesting part is forcing the agent to use a shared, inspectable tool instead of inventing another one off script every time it needs evidence.
+There is nothing magical in that list because that is the point. The interesting part is forcing the agent to use a shared, inspectable tool instead of inventing another one off script every time it needs evidence.
 
 The project became more useful once I stopped asking "how many agents can I create?" and started asking "what commands do I wish existed every time I need to prove a change actually works?"
 
@@ -152,11 +150,9 @@ That is a very different bar from "the command returned zero." It asks the model
 
 ## The plan had to be readable by a tired human
 
-Another thing I had to fix was the shape of the planning output.
+I am an advocate for HITL loops. I don't trust any AI system that doesn't have atleast 1 human approval. I designed this agent to work in similar fashion. It would generate a whole test plan first in a JSON file and then ask user for approval or modifications or clarifications before proceeding to actually execute the plan.
 
-Early AI generated plans love internal identifiers. They produce tables full of `R7`, `B3`, `T12`, terse labels and references that only make sense if you already read the hidden JSON. That is fine for machine state. It is terrible for human approval.
-
-The human review point matters because this is where the system decides what proof it is going to collect. If the approval table is unreadable, I am not really approving the plan. I am trusting the model's summary of its own plan, which is exactly the kind of thing I am trying to avoid.
+However, the early AI generated plans love internal identifiers. They produce tables full of `R7`, `B3`, `T12`, terse labels and references that only make sense if you already read the full test plan JSON. It is terrible for human approval.
 
 So I pushed the user facing plan toward plain language:
 
@@ -171,9 +167,7 @@ The internal ids can still exist in the JSON because machines need stable handle
 
 I am still thinking through what the right review surface should be here. A markdown table is good enough for the first version, but I can imagine publishing the plan as a Google Sheet so the cases, risks, owners, evidence and verdicts are easy to filter. I can also imagine an HTML like output that makes the approval flow feel closer to a lightweight QA dashboard, where a reviewer can scan the plan, expand the evidence and see which witnesses are blocking a real pass.
 
-I do not know which one is right yet. The important constraint is that the human should be reviewing the shape of the proof, not deciphering the model's private bookkeeping.
-
-That change sounds like UX polish, but I think it is part of verification. A plan that cannot be reviewed is just another way for the model to smuggle assumptions into the run.
+I do not know which one is right yet. The important constraint is that the human should be reviewing the shape of the proof, not deciphering the model's intentions.
 
 ## The environment had to become real enough to lie
 
