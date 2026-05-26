@@ -49,21 +49,21 @@ flowchart LR
   V --> L["Review gated learning"]
 ```
 
-## The agents became lanes instead of personalities
+## Getting the agent split right
 
-The agent split only started making sense once I stopped treating agents like characters and started treating them like **lanes of work**.
+The agent split only started making sense once I stopped treating them like a wrapper on skills but more like a single unit of work that could be done in paralle without rotting the context of main agent. 
 
-The static risk lane reads the change and predicts where reality might disagree with the author's intent. It does not mutate the environment. Its job is to say "this config default changed", "this fallback path now matters", "this new class needs a witness" or "this old behavior might break if an existing user upgrades."
+The static risk lane reads the change and predicts where reality might disagree with the author's intent. It does not mutate the environment. Its job is to say "this config default changed", "this fallback path now matters" or "this old behavior might break if an existing user upgrades."
 
-The context lane watches everything outside the code while the run is happening. A review comment, incident note, design doc update or release thread can change the shape of the verification. This lane should not own execution because its value is staying light enough to run beside the heavier work.
+The context lane watches everything outside the code while the run is happening. A review comment, incident note, design doc update or release thread can change the shape of the verification. This lane should not own execution because its value is staying light enough to run beside the heavier work. It also gathers past issues observed in this code path reported in Slack or RCAs
 
 The scenario lane is the one that actually drives the system. It creates state, feeds inputs, calls APIs, runs jobs, restarts components and checks the visible result. This is the lane that has to think like a user rather than a unit test.
 
-The witness lane is deliberately read only. It watches the same run from the side and asks whether the intended runtime path actually executed. Logs, metrics, live config and class loading evidence all belong here.
+The witness lane is deliberately read only. It watches the same run from the side and asks whether the intended runtime path actually executed. Logs, metrics, live config and class loading evidence all belong here. This is really important so that a test that passes is verified to have actually excercised the code path instead of simply going another safe route and returning 200 ok.
 
-The fuzz lane comes later, after the deterministic scenarios are already believable. Its job is to explore operation interleavings from seeds, keep the schedules reproducible and shrink any failure into something a human can inspect.
+The fuzz lane comes later, after the deterministic scenarios are already believable. It's job is to run multiple cluster or table altering operations like pod restarts, table rebalance etc. in parallel and check that our state does not corrupt and invariants are preserved. It should not be like after restart we start getting different data in query response.
 
-I like this split because each lane has a reason to run in parallel. It is not parallelism for the aesthetic. It is parallelism where the work does not share ownership of the same mutable thing.
+I like this split because each lane has a reason to run in parallel.
 
 ## The skills became the toolbox
 
@@ -81,7 +81,7 @@ Some skills are about **compatibility and regression shape**. They look at old c
 
 Some skills are about **reproduction and reporting**. If a run finds something suspicious, the next useful artifact is not a paragraph of concern. It is a smaller repro, the command that triggers it, the evidence that proves it failed for the intended reason and a report that preserves gaps without turning them into drama.
 
-And then there is the learning skill, which is really a guardrail around memory. It lets the system propose improvements to its own playbooks, but only through review gated changes.
+And then there is the learning skill, which is really a guardrail around memory. It lets the system propose improvements to its own playbooks, but only through review gated changes. This was necessary because the variance of features to be tested is quite high. Just like a real engineer, we'll run into shortcomings in our skills where claude would have to spend 1 hour instead of 5 minutes to figure out correct way forward. The only way to make it faster is to keep improving skills. This learning skill first proposes the user what it wants to fix, and then user can take a call to whether incorporate them as it is, modify or only select a subset.
 
 That split made the system easier to reason about. Agents answer "what work can happen independently?" Skills answer "what method do we reuse when this class of problem appears again?"
 
