@@ -169,41 +169,6 @@ I am still thinking through what the right review surface should be here. A mark
 
 I do not know which one is right yet. The important constraint is that the human should be reviewing the shape of the proof, not deciphering the model's intentions.
 
-## The environment had to become real enough to lie
-
-Once I accepted that the project was about runtime proof, the local environment harness had to grow up.
-
-The early model was too small. A single process is useful for a smoke test, but it is not enough for a lot of real behavior. Replication needs multiple workers. Background jobs need background processes that are actually running. Restart scenarios need components that can be stopped and rejoined without killing the whole system.
-
-That pushed the harness away from "one process id in a file" and toward a component registry.
-
-```json
-[
-  {
-    "role": "primary",
-    "index": 0,
-    "pid": 1234,
-    "logPath": ".qa-runs/clusters/demo/primary.log",
-    "ports": {"http": 9000},
-    "startedAtMs": 1700000000000
-  },
-  {
-    "role": "worker",
-    "index": 1,
-    "pid": 1235,
-    "logPath": ".qa-runs/clusters/demo/worker-1.log",
-    "ports": {"http": 9100},
-    "startedAtMs": 1700000001000
-  }
-]
-```
-
-The boring details mattered more than I expected. Side processes needed unique ports. They needed isolated data directories. The harness had to discover the actual runtime identity of a component after it registered, because the id the system chose at startup was not always the id I would have guessed from the command line.
-
-That bug class is exactly why local verification tools need to be real enough to lie. If two workers share the same default data directory, a recovery scenario can pass for a fake reason. The file is already local, so the network fetch or rebuild path you wanted to test never runs.
-
-That is not a product bug. That is a bad test shape, but it is still dangerous because it produces confidence.
-
 ## I started treating blocked as a real verdict
 
 One of the quieter changes I liked was making the system less eager to be helpful.
@@ -214,29 +179,11 @@ That sounds obvious until you watch AI tools work. Models are very good at findi
 
 All of those can be useful developer activities, but they are not the same as runtime verification.
 
-So I started pushing the framework toward a simple rule: **do not silently answer a different question**.
+So I started pushing the framework toward a simple rule: **do not silently verify by skipping necessary steps**.
 
 If the requested proof requires a real dependency and the dependency is missing, say that. If the proof requires a multi process topology and the local harness only launched one process, say that. If the path is feature flag gated and no witness can prove the flag was live, say that.
 
 The point is not to be dramatic. The point is to keep uncertainty in the output instead of laundering it into a green check.
-
-## The useful part was the correction loop
-
-The repo changed because the sessions kept correcting the model.
-
-One session pushed the framework away from too many agents. Another pushed it away from running tests as a substitute for user facing behavior. Another corrected a plan that staged downstream artifacts by hand because that was not the same as exercising the real path. Later sessions added external dependency recipes because skipping the external system is often just another way to test the bypass.
-
-That loop mattered more than any one file.
-
-The AI was very good at generating structure. It was less naturally good at knowing which structure was honest. The useful pattern was forcing every abstraction to answer a verification question:
-
-- Does this make runtime evidence easier to collect?
-- Does this reduce repeated setup mistakes?
-- Does this prevent a false green?
-- Does this make a later run more reproducible?
-- Does this keep the human approval point where it belongs?
-
-When the answer was no, the structure usually had to be deleted or demoted.
 
 ## Real runs made the framework less theoretical
 
@@ -250,11 +197,17 @@ That sounds backwards, but it is the part I trust most. A run that says "the vis
 
 That is the most useful shape I got from this iteration: **the framework does not just produce a verdict, it produces better future verification machinery**.
 
-## Learning needed a brake pedal
+Once I had dogfooded major flows like query, ingestion, upserts, retention etc. what followed was asking the right questions for all skills / agents invoked in the session - 
 
-One problem with agent based QA is that every run teaches you something while session compaction is very good at making those lessons disappear.
+- Does this make runtime evidence easier to collect?
+- Does this reduce repeated setup mistakes?
+- Does this prevent a false green?
+- Does this make a later run more reproducible?
+- Does this keep the human approval point where it belongs?
 
-So I added a review gated learning loop where the word "review" matters. I do not want the system silently rewriting its own instructions every time a run goes sideways. That would make the repo drift based on whatever one model happened to infer from one bad run.
+When the answer was no, the skilled usually had to be augment to fill the gaps or sometimes deleted since it was confusing the model (e.g. Skills meant for CI confusing local only exection).
+
+I also tried to make this as automated as possible based on my own learnings on what mattered. I also do not want the system silently rewriting its own instructions every time a run goes sideways. That would make the repo drift based on whatever one model happened to infer from one bad run.
 
 Instead, the agent can propose durable changes as JSON: patch this playbook, add this reference, update this agent instruction, validate with these commands. The CLI can render the proposal, validate the target paths and apply it only when explicitly approved.
 
@@ -272,7 +225,7 @@ That means an AI verification system needs a different personality from an AI co
 
 The uncomfortable part is that this makes the system feel slower in the moment. It asks for logs when a summary would be faster. It asks for a live config when a source file looks obvious. It asks for a witness when the output already looks right because that friction is the feature.
 
-That is backwards from the usual coding assistant experience, but I think it is the right trade.
+That is backwards from the usual coding assistant experience, but I think it is the right tradeoff.
 
 I still do not know how far this goes. The current version is not some grand autonomous QA engine. It is a local verification driver with a CLI, a few useful work lanes, a runtime witness idea and a learning loop that needs human approval.
 
@@ -282,4 +235,4 @@ If coding is getting faster, the next bottleneck is deciding what to trust. I do
 
 The next thing I am thinking about is how to make this easier for my teammates to use without turning it into another thing they have to babysit. Maybe that means a GitHub Action that auto triggers on certain PRs and publishes a readable verification plan or report. Before I can do that seriously, I need to make the loop cheaper and faster, because an expensive slow verifier will become shelfware no matter how correct the idea is.
 
-That is the part I want to keep pushing on: not just whether AI can generate the code, but whether it can help make the proof cheap enough that people actually use it.
+I am also working on making past bugs easier to reproduce and maybe add an investigator that verifies the FAILED cases were not setup's fault (since I am noticing that to be the case in 20% of the runs). Once it is stable I'll add a way to report bugs directly as a JIRA ticket
