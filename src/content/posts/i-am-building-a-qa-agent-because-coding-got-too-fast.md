@@ -12,27 +12,23 @@ tags:
 featured: false
 ---
 
-I am still working on this project, so treat this as an in progress dump rather than a polished "here is the thing I built" post. The shape is changing quickly while a lot of the interesting parts are still half design, half scars from the last run.
+I am still working on this project, so treat this as an in progress dump rather than a polished YC announcement posst. The shape is changing quickly while a lot of the interesting parts are still half design, half scars from the last run.
 
-I started from a slightly uncomfortable place. Codex and Claude Code have ramped up implementation speed so much that typing code is no longer the part that feels scarce.
+I started from a slightly uncomfortable place. Codex and Claude Code have ramped up implementation speed so much that me and my teammates are ending up with tens of PRs lying around waiting for approvals.
 
-That sounds like a nice problem to have until the output starts piling up. A model can scaffold a feature, wire a CLI, write docs, add tests and produce a convincing final answer in one sitting, but the review loop still does not solve the part that actually creates trust: end to end verification.
+Why is that? Especially when AI code reviewers have also gotten better. It's cause the review loop still does not solve the part that actually creates trust i.e. end to end verification. People don't trust the PR author themselves have done it (and they are right, pffft)
 
-The result is a weird new bottleneck. PRs can pile up with endless AI reviews, follow-up comments and plausible suggestions, while human approvals still lag because nobody has enough confidence that the thing was exercised through the path users will actually hit.
-
-So I wanted to see how far I could push the next step. If AI can help me write code faster, can it also help me verify code more honestly?
-
-Not just by running a test command and calling it a day. I wanted something closer to how a skeptical engineer would approach a risky change: run the thing, drive it through the path a user would hit, look at the logs, check the live config, compare the output and then decide whether the behavior actually happened.
+So I wanted to see how far I could push the next step. If AI can help me write code faster, can it also help me verify code more honestly? Not just by writing a lazy test with everything mocked(something i am also trying to fix) then running a test command and calling it a day. I wanted something closer to how a skeptical engineer would approach a risky change: run the thing, drive it through the path a user would hit, look at the logs, check the live config, compare the output and then decide whether the behavior actually happened.
 
 The first iteration of this project is my attempt at building that loop.
 
-## The first version had too much architecture cosplay
+## The first version had too much architecture spaghetti
 
 The first version came out of the machine exactly the way AI projects often do. It was ambitious, broad and slightly drunk on taxonomy.
 
-There were skills for every category of verification I could imagine. There were agents for planning, static analysis, scenario validation, context watching, bug reproduction and report writing. The structure looked serious because it had a lot of named parts.
+There were skills for every category of verification I could imagine. There were agents for planning, static analysis, scenario validation, context watching, bug reproduction and report writing. The structure looked serious because it had a lot of named parts. I was iterating on the idea in my notebook, then I handed that off to GPT-5.5-Pro to come up with a plan, iterated on that for a few days. Then I handed that plan over to Codex's /goal which worked on it for around 10 hours. 
 
-Then I read back through the sessions that built the project and the real pattern was obvious. The first useful correction was not "add more agents." It was "why do these agents exist?"
+I started using it and realised claude would always get confused which skills to pick and agents to invoke at what that. I read back through the sessions that built the project and the real pattern was obvious. The first useful correction was not "add more agents." It was "why do these agents exist?"
 
 An agent is useful when it owns work that can happen independently. Watching changing context while a run is active is independent. Reading a diff for risk while an environment is starting is independent. Running a scenario is independent from a read only witness that watches logs and metrics.
 
@@ -52,8 +48,6 @@ flowchart LR
   W --> V
   V --> L["Review gated learning"]
 ```
-
-That diagram looks cleaner than the early repo did, which is usually a sign that the early repo was trying too hard.
 
 ## The agents became lanes instead of personalities
 
