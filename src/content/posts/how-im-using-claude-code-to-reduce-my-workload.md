@@ -68,18 +68,6 @@ I also turned release readiness into a reusable workflow instead of a scavenger 
 
 The key improvement is that the automation is shaped around the real release artifacts, not a generic test plan template. This kind of work fails when the output is too vague to paste into the release docs or too detached from ticket metadata. This one is useful because it speaks in the same fields the release process already uses.
 
-## eval runner
-
-Another kind of automation is not a scheduled job, but a repeatable eval pipeline. It can collect system metadata, execution plans, runtime stats and model prompts from a live environment without making an LLM call, then run the collected prompts locally and judge the results afterward.
-
-This matters because a lot of recommendation tuning is otherwise hidden inside expensive runs that are hard to replay. Splitting collection from judgment gives me reviewable artifacts for each case: what the input was, what the system observed, what the model was asked, what it recommended and whether the judge agreed. That turns prompt and threshold tuning from a vibes exercise into something I can diff.
-
-## learning proposals with a brake
-
-The newest layer is learning from completed work, but with a hard brake. I do not want an agent quietly rewriting its own instructions in the background. The workflow now produces learning proposals that need review: JSON changes that can patch a skill, add a support file, create a new skill or update an agent instruction, but only after validation, rendered diff review and an explicit apply step.
-
-That is the version of this learning loop I can trust. The automation captures durable lessons from real tasks, but it keeps the write boundary visible. If a workflow correction is worth preserving, it becomes a proposal with evidence and validation commands, not a mysterious mutation to the tool I depend on.
-
 ## What changed since the first version
 
 The first set of automations mostly reduced daily context reconstruction. The newer set is more about keeping loops from decaying while I am focused somewhere else.
@@ -88,9 +76,9 @@ There are now three categories:
 
 - Attention filters: priority selection, Slack digests, hourly question sweeps.
 - Artifact keepers: standup notes, project docs, runbooks, release readiness rows.
-- Review and validation loops: PR monitors, eval runners, release planners, learning proposals.
+- Review and validation loops: PR monitors and release planners.
 
-That distinction matters because not every chore wants the same level of autonomy. Slack answers should be drafted to me. Runbooks can be edited if evidence is strong. PR monitors can push small targeted fixes but should not resolve review comments. Learning proposals can suggest changes but should not apply them silently.
+That distinction matters because not every chore wants the same level of autonomy. Slack answers should be drafted to me. Runbooks can be edited if evidence is strong. PR monitors can push small targeted fixes but should not resolve review comments. Release readiness outputs should stay aligned with existing launch process fields.
 
 The pattern is still the same as before: useful automation is not one giant assistant. It is a collection of small, opinionated loops with enough context to remove the boring part and enough restraint to leave the judgment where it belongs.
 
