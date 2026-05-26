@@ -37,7 +37,7 @@ But an agent whose whole job is to wrap one checklist is mostly ceremony. It mak
 That was the first design correction: **agents are work lanes, skills are reusable playbooks and the CLI is the shared tool surface**.
 
 ```mermaid
-flowchart LR
+flowchart TD
   U["User asks to verify a change"] --> R["Risk lane"]
   U --> C["Context lane"]
   R --> P["Test plan"]
@@ -81,15 +81,13 @@ Some skills are about **compatibility and regression shape**. They look at old c
 
 Some skills are about **reproduction and reporting**. If a run finds something suspicious, the next useful artifact is not a paragraph of concern. It is a smaller repro, the command that triggers it, the evidence that proves it failed for the intended reason and a report that preserves gaps without turning them into drama.
 
-And then there is the learning skill, which is really a guardrail around memory. It lets the system propose improvements to its own playbooks, but only through review gated changes. This was necessary because the variance of features to be tested is quite high. Just like a real engineer, we'll run into shortcomings in our skills where claude would have to spend 1 hour instead of 5 minutes to figure out correct way forward. The only way to make it faster is to keep improving skills. This learning skill first proposes the user what it wants to fix, and then user can take a call to whether incorporate them as it is, modify or only select a subset.
+And then there is the learning skill, which I mostly think of as a guardrail around memory. It exists because the verifier should improve from repeated failures, but that improvement needs its own approval path instead of quietly rewriting the system while nobody is looking.
 
 That split made the system easier to reason about. Agents answer "what work can happen independently?" Skills answer "what method do we reuse when this class of problem appears again?"
 
 ## The boring CLI was the point
 
-The second correction was making a CLI.
-
-I did not want the command line tool to become the brain of the system. The agents should decide what needs to be investigated. The reusable playbooks should describe how a class of investigation works. The goal of the CLI is to provide mostly a way to interact with our systems easily so that agent doesn't have to write a custom script or have deterministic fast paths for things like generating a test dataset. 
+The second correction was making a CLI, but I did not want the command line tool to become the brain of the system. The agents should decide what needs to be investigated. The reusable playbooks should describe how a class of investigation works. The goal of the CLI is to provide mostly a way to interact with our systems easily so that agent doesn't have to write a custom script or have deterministic fast paths for things like generating a test dataset.
 
 That meant the CLI surface had to stay practical:
 
@@ -146,6 +144,8 @@ The witness contract is intentionally concrete:
 
 The important part is not the JSON. The important part is the rule behind it: a test with a witness block cannot be marked `PASS` until the witness passes too.
 
+<iframe src="/widgets/i-am-building-a-qa-agent-because-coding-got-too-fast/witness-gate.html" width="100%" height="570" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
+
 That is a very different bar from "the command returned zero." It asks the model to prove that the interesting thing happened, not just that the visible output looked acceptable.
 
 ## The plan had to be readable by a tired human
@@ -185,9 +185,9 @@ If the requested proof requires a real dependency and the dependency is missing,
 
 The point is not to be dramatic. The point is to keep uncertainty in the output instead of laundering it into a green check.
 
-## Real runs made the framework less theoretical
+## The gaps became the useful part
 
-The first iteration became much more interesting once it started running against real local systems.
+The first iteration became much more interesting once it started running against real local systems because the failures stopped being abstract.
 
 The ingestion style runs forced the dependency story to become real because topics, payloads, schemas and consumer config all had to work before behavior could be judged. The file reader runs pushed the dataset story because "generate a file" is not the same as generating the weird edge cases that break a reader. The stateful runs corrected the target implementation when the first plan was aimed at the wrong path.
 
@@ -197,7 +197,7 @@ That sounds backwards, but it is the part I trust most. A run that says "the vis
 
 That is the most useful shape I got from this iteration: **the framework does not just produce a verdict, it produces better future verification machinery**.
 
-Once I had dogfooded major flows like query, ingestion, upserts, retention etc. what followed was asking the right questions for all skills / agents invoked in the session - 
+Once I had dogfooded major flows like query, ingestion, upserts, retention etc. what followed was asking the right questions for all skills and agents invoked in the session:
 
 - Does this make runtime evidence easier to collect?
 - Does this reduce repeated setup mistakes?
@@ -205,13 +205,15 @@ Once I had dogfooded major flows like query, ingestion, upserts, retention etc. 
 - Does this make a later run more reproducible?
 - Does this keep the human approval point where it belongs?
 
-When the answer was no, the skilled usually had to be augment to fill the gaps or sometimes deleted since it was confusing the model (e.g. Skills meant for CI confusing local only exection).
+When the answer was no, the skill usually had to be augmented to fill the gap or sometimes deleted because it was confusing the model. A skill meant for CI, for example, is actively annoying when the run is supposed to stay local.
 
-I also tried to make this as automated as possible based on my own learnings on what mattered. I also do not want the system silently rewriting its own instructions every time a run goes sideways. That would make the repo drift based on whatever one model happened to infer from one bad run.
+This is where the learning loop belongs. The system should notice repeated setup mistakes, weak witness patterns and missing checks, but I do not want it silently rewriting its own instructions every time a run goes sideways. That would make the repo drift based on whatever one model happened to infer from one bad run.
 
 Instead, the agent can propose durable changes as JSON: patch this playbook, add this reference, update this agent instruction, validate with these commands. The CLI can render the proposal, validate the target paths and apply it only when explicitly approved.
 
-That turned repeated mistakes into controlled updates. Bad setup assumptions became recipes. Weak witness patterns became better witness recipes. Harness bugs became concrete checks. None of that had to live only in chat history.
+That turns repeated mistakes into controlled updates. Bad setup assumptions become recipes. Weak witness patterns become better witness recipes. Harness bugs become concrete checks. None of that has to live only in chat history.
+
+<iframe src="/widgets/i-am-building-a-qa-agent-because-coding-got-too-fast/gap-learning-loop.html" width="100%" height="580" style="border: 1px solid #222; border-radius: 6px; background: #0a0a0a;" loading="lazy"></iframe>
 
 This is also where AI starts feeling less like a code generator and more like a QA apprentice with a notebook. The notebook is not trusted automatically, but it is still useful.
 
@@ -227,7 +229,7 @@ The uncomfortable part is that this makes the system feel slower in the moment. 
 
 That is backwards from the usual coding assistant experience, but I think it is the right tradeoff.
 
-I still do not know how far this goes. The current version is not some grand autonomous QA engine. It is a local verification driver with a CLI, a few useful work lanes, a runtime witness idea and a learning loop that needs human approval.
+I still do not know how far this goes. The current version is not some grand autonomous QA engine. It is a local verification driver with a CLI, a few useful work lanes and a runtime witness idea that keeps forcing better evidence.
 
 But that already feels like a meaningful direction.
 

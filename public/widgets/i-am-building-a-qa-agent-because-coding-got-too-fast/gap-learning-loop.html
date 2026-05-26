@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gap Learning Loop</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 18px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:disabled:hover { border-color: #333; color: #e0e0e0; }
+  button.warn:hover { border-color: #e6a64a; color: #e6a64a; }
+  button.warn.active { border-color: #e6a64a; color: #0a0a0a; background: #e6a64a; }
+  .stats {
+    display: flex; gap: 18px; font-size: 11px; color: #666; margin-top: 12px; flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .warn { color: #e6a64a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// gap learning loop</div>
+  <div class="widget-subtitle">choose a gap path and watch it become a reviewed, explicit update</div>
+
+  <svg id="main-svg" viewBox="0 0 720 390" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="18" fill="#666" font-size="10" font-family="IBM Plex Mono">THE NOTEBOOK IS USEFUL ONLY WHEN UPDATES ARE EXPLICIT AND REVIEWABLE</text>
+    <g id="content"></g>
+    <rect x="40" y="326" width="640" height="46" rx="3" fill="none" stroke="#222" stroke-width="1" id="status-panel"/>
+    <text x="360" y="349" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">record a gap from a blocked run</text>
+    <text x="360" y="364" text-anchor="middle" fill="#555" font-size="9"
+          font-family="IBM Plex Mono" id="status-sub">the system learns only after a human approves the patch</text>
+  </svg>
+
+  <div class="controls">
+    <button data-path="metric">missing metric</button>
+    <button data-path="setup">setup mistake</button>
+    <button data-path="witness">weak witness</button>
+    <button data-path="target">wrong path</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>path: <span id="stat-path">choose one</span></div>
+    <div>gaps captured: <span id="stat-gaps">0</span></div>
+    <div>proposal: <span id="stat-proposal">none</span></div>
+    <div>memory update: <span id="stat-memory" class="warn">not applied</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+let gaps = {
+  metric: 0,
+  setup: 0,
+  witness: 0,
+  target: 0
+};
+let proposal = false;
+let approved = false;
+let activePath = null;
+let pathStep = 0;
+let playTimer = null;
+let startTimer = null;
+
+const content = document.getElementById('content');
+const statusPanel = document.getElementById('status-panel');
+const statusText = document.getElementById('status-text');
+const statusSub = document.getElementById('status-sub');
+const statPath = document.getElementById('stat-path');
+const statGaps = document.getElementById('stat-gaps');
+const statProposal = document.getElementById('stat-proposal');
+const statMemory = document.getElementById('stat-memory');
+const pathButtons = Array.from(document.querySelectorAll('[data-path]'));
+
+const gapMeta = {
+  metric: ['missing metric', 'add metric probe recipe'],
+  setup: ['setup mistake', 'turn setup into CLI command'],
+  witness: ['weak witness', 'tighten witness pattern'],
+  target: ['wrong path', 'add target discovery check']
+};
+
+const pathActions = [
+  'record first blocked run',
+  'same gap repeats in another run',
+  'third sighting makes it worth promoting',
+  'render a reviewed patch proposal',
+  'human approves the durable update'
+];
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = svgEl('text', {
+    x, y,
+    fill: opts.fill || '#888',
+    'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono',
+    'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function drawArrow(x1, y1, x2, y2, color) {
+  content.appendChild(svgEl('line', {
+    x1, y1, x2, y2,
+    stroke: color,
+    'stroke-width': 1
+  }));
+  content.appendChild(svgEl('polygon', {
+    points: `${x2},${y2} ${x2 - 8},${y2 - 4} ${x2 - 8},${y2 + 4}`,
+    fill: color
+  }));
+}
+
+function drawStage(x, y, w, h, title, subtitle, state) {
+  const color = state === 'done' ? ACCENT : state === 'active' ? '#e6a64a' : '#222';
+  const fill = state === 'done' ? ACCENT_FILL_DARK : state === 'active' ? '#1a1205' : 'none';
+  const text = state === 'done' ? ACCENT_MID : state === 'active' ? '#e6a64a' : '#555';
+  content.appendChild(svgEl('rect', {
+    x, y, width: w, height: h, rx: 3,
+    fill,
+    stroke: color,
+    'stroke-width': state === 'idle' ? 1 : 1.5
+  }));
+  addText(content, x + w / 2, y + 24, title, { fill: text, size: '11', anchor: 'middle' });
+  addText(content, x + w / 2, y + 43, subtitle, { fill: state === 'idle' ? '#444' : '#888', size: '9', anchor: 'middle' });
+}
+
+function totalGaps() {
+  return Object.values(gaps).reduce((sum, count) => sum + count, 0);
+}
+
+function topGap() {
+  const entries = Object.entries(gaps).sort((a, b) => b[1] - a[1]);
+  return entries[0][1] > 0 ? entries[0][0] : null;
+}
+
+function renderGapBars() {
+  addText(content, 52, 164, 'gap ledger', { fill: '#666', size: '10' });
+  Object.entries(gapMeta).forEach(([key, meta], index) => {
+    const y = 184 + index * 28;
+    const count = gaps[key];
+    const width = Math.min(164, count * 34);
+    addText(content, 52, y + 11, meta[0], { fill: count ? '#888' : '#444', size: '9' });
+    content.appendChild(svgEl('rect', {
+      x: 186, y, width: 170, height: 14, rx: 2,
+      fill: 'none',
+      stroke: '#222',
+      'stroke-width': 1
+    }));
+    content.appendChild(svgEl('rect', {
+      x: 189, y: y + 3, width, height: 8, rx: 2,
+      fill: count ? ACCENT_MID : '#222',
+      stroke: 'none'
+    }));
+    addText(content, 370, y + 11, String(count), { fill: count ? ACCENT_SOFT : '#444', size: '9' });
+  });
+}
+
+function render() {
+  content.innerHTML = '';
+  const count = totalGaps();
+  const mostCommon = topGap();
+  const hasProposal = proposal || approved;
+
+  drawStage(52, 54, 128, 58, 'blocked run', count > 0 ? `${count} gap(s)` : 'no gap yet', count > 0 ? 'done' : 'active');
+  drawArrow(180, 83, 238, 83, count > 0 ? ACCENT_FAINT : '#333');
+  drawStage(238, 54, 128, 58, 'gap ledger', mostCommon ? gapMeta[mostCommon][0] : 'waiting', count > 0 ? 'done' : 'idle');
+  drawArrow(366, 83, 424, 83, hasProposal ? ACCENT_FAINT : '#333');
+  drawStage(424, 54, 128, 58, 'proposal', hasProposal && mostCommon ? gapMeta[mostCommon][1] : 'none', proposal ? 'active' : approved ? 'done' : 'idle');
+  drawArrow(552, 83, 610, 83, approved ? ACCENT_FAINT : '#333');
+  drawStage(610, 54, 70, 58, 'patch', approved ? 'applied' : 'locked', approved ? 'done' : 'idle');
+
+  renderGapBars();
+
+  if (mostCommon) {
+    addText(content, 442, 176, 'proposed durable change', { fill: '#666', size: '10' });
+    addText(content, 442, 200, gapMeta[mostCommon][1], {
+      fill: approved ? ACCENT : proposal ? '#e6a64a' : '#555',
+      size: '11'
+    });
+    addText(content, 442, 224, 'validated paths + explicit approval', { fill: proposal || approved ? '#888' : '#444', size: '9' });
+    addText(content, 442, 244, 'no silent rewrite from one bad run', { fill: proposal || approved ? '#888' : '#444', size: '9' });
+  } else {
+    addText(content, 442, 200, 'add a recurring gap first', { fill: '#555', size: '11' });
+  }
+
+  pathButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.path === activePath);
+  });
+
+  statPath.textContent = activePath ? gapMeta[activePath][0] : 'choose one';
+  statGaps.textContent = String(count);
+  statProposal.textContent = proposal || approved ? 'ready' : 'none';
+  statProposal.className = proposal && !approved ? 'warn' : '';
+  statMemory.textContent = approved ? 'approved' : 'not applied';
+  statMemory.className = approved ? '' : 'warn';
+
+  if (approved) {
+    statusText.textContent = 'approved patch: the repeated gap becomes a reviewed playbook or CLI update';
+    statusSub.textContent = 'learning is durable, but not automatic';
+    statusText.setAttribute('fill', ACCENT);
+    statusPanel.setAttribute('stroke', ACCENT_DIM);
+  } else if (proposal) {
+    statusText.textContent = 'proposal ready: a human still has to accept the change';
+    statusSub.textContent = 'the agent can write the notebook entry, but it cannot trust itself blindly';
+    statusText.setAttribute('fill', '#e6a64a');
+    statusPanel.setAttribute('stroke', '#e6a64a');
+  } else if (count > 0) {
+    statusText.textContent = activePath ? pathActions[Math.max(0, pathStep - 1)] : 'captured gap: preserve what was not proven instead of hiding it';
+    statusSub.textContent = 'repeated gaps can become recipes once there is enough signal';
+    statusText.setAttribute('fill', '#e6a64a');
+    statusPanel.setAttribute('stroke', '#e6a64a');
+  } else {
+    statusText.textContent = 'record a gap from a blocked run';
+    statusSub.textContent = 'the system learns only after a human approves the patch';
+    statusText.setAttribute('fill', '#888');
+    statusPanel.setAttribute('stroke', '#222');
+  }
+}
+
+function stopPlayback() {
+  if (startTimer) clearTimeout(startTimer);
+  if (playTimer) clearInterval(playTimer);
+  startTimer = null;
+  playTimer = null;
+}
+
+function resetState(path = null) {
+  gaps = { metric: 0, setup: 0, witness: 0, target: 0 };
+  proposal = false;
+  approved = false;
+  activePath = path;
+  pathStep = 0;
+}
+
+function advancePath() {
+  if (!activePath) return;
+  pathStep += 1;
+  if (pathStep <= 3) {
+    gaps[activePath] = pathStep;
+  } else if (pathStep === 4) {
+    proposal = true;
+  } else if (pathStep === 5) {
+    approved = true;
+    stopPlayback();
+  } else {
+    stopPlayback();
+  }
+  render();
+}
+
+function playPath(path) {
+  stopPlayback();
+  resetState(path);
+  render();
+  startTimer = setTimeout(() => {
+    advancePath();
+    playTimer = setInterval(advancePath, 850);
+  }, 220);
+}
+
+pathButtons.forEach((button) => {
+  button.addEventListener('click', () => playPath(button.dataset.path));
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopPlayback();
+  resetState();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

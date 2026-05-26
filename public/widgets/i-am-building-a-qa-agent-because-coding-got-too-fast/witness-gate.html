@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Witness Gate</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root { --w-accent: #c8e64a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow: hidden; }
+  body {
+    background: #0a0a0a; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px;
+  }
+  .widget { width: 100%; max-width: 720px; }
+  .widget-title {
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--w-accent); margin-bottom: 6px;
+  }
+  .widget-subtitle { font-size: 12px; color: #666; margin-bottom: 18px; }
+  svg { width: 100%; height: auto; display: block; }
+  .controls {
+    display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center;
+  }
+  button {
+    background: transparent; border: 1px solid #333; color: #e0e0e0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--w-accent); color: var(--w-accent); }
+  button.active { border-color: var(--w-accent); color: #0a0a0a; background: var(--w-accent); }
+  button.warn:hover { border-color: #e6a64a; color: #e6a64a; }
+  button.warn.active { border-color: #e6a64a; background: #e6a64a; color: #0a0a0a; }
+  button.danger:hover { border-color: #e64a4a; color: #e64a4a; }
+  button.danger.active { border-color: #e64a4a; background: #e64a4a; color: #0a0a0a; }
+  .stats {
+    display: flex; gap: 18px; font-size: 11px; color: #666; margin-top: 12px; flex-wrap: wrap;
+  }
+  .stats span { color: var(--w-accent); }
+  .stats .warn { color: #e6a64a; }
+  .stats .fail { color: #e64a4a; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div class="widget-title">// witness gate</div>
+  <div class="widget-subtitle">choose a path and watch the evidence auto-fill into pass, blocked or fail</div>
+
+  <svg id="main-svg" viewBox="0 0 720 380" xmlns="http://www.w3.org/2000/svg">
+    <text x="40" y="18" fill="#666" font-size="10" font-family="IBM Plex Mono">VISIBLE OUTPUT IS ONLY ONE SIGNAL; THE WITNESS HAS TO PROVE THE PATH</text>
+    <g id="content"></g>
+    <rect x="40" y="318" width="640" height="46" rx="3" fill="none" stroke="#222" stroke-width="1" id="status-panel"/>
+    <text x="360" y="341" text-anchor="middle" fill="#888" font-size="11"
+          font-family="IBM Plex Mono" id="status-text">visible output is green, but the witness is still incomplete</text>
+    <text x="360" y="356" text-anchor="middle" fill="#555" font-size="9"
+          font-family="IBM Plex Mono" id="status-sub">a verifier should preserve uncertainty instead of laundering it into PASS</text>
+  </svg>
+
+  <div class="controls">
+    <button data-path="blocked" class="warn">false green</button>
+    <button data-path="pass">proved path</button>
+    <button data-path="fallback" class="danger">fallback fail</button>
+    <button id="btn-reset">reset</button>
+  </div>
+  <div class="stats">
+    <div>path: <span id="stat-path">choose one</span></div>
+    <div>visible result: <span id="stat-output">ok</span></div>
+    <div>witness evidence: <span id="stat-witness">1/3</span></div>
+    <div>verdict: <span id="stat-verdict" class="warn">BLOCKED</span></div>
+  </div>
+</div>
+<script>
+// ── Sync accent with the blog's dynamic palette ──
+const ACCENT = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('home-accent-palette'));
+    return p?.dark?.hex || '#c8e64a';
+  } catch { return '#c8e64a'; }
+})();
+function _hexRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function _mix(rgb, t) {
+  return '#' + rgb.map(c => Math.round(10 + (c - 10) * t).toString(16).padStart(2, '0')).join('');
+}
+const _ac = _hexRgb(ACCENT);
+const ACCENT_DIM = _mix(_ac, 0.16);
+const ACCENT_MID = _mix(_ac, 0.50);
+const ACCENT_SOFT = _mix(_ac, 0.30);
+const ACCENT_FILL = _mix(_ac, 0.08);
+const ACCENT_FILL_DARK = _mix(_ac, 0.04);
+const ACCENT_FAINT = _mix(_ac, 0.10);
+document.documentElement.style.setProperty('--w-accent', ACCENT);
+
+let state = {
+  outputOk: false,
+  flagLive: false,
+  classLoaded: false,
+  metricMoved: false,
+  fallbackLog: false
+};
+let activePath = null;
+let pathStep = 0;
+let playTimer = null;
+let startTimer = null;
+
+const content = document.getElementById('content');
+const statusPanel = document.getElementById('status-panel');
+const statusText = document.getElementById('status-text');
+const statusSub = document.getElementById('status-sub');
+const statPath = document.getElementById('stat-path');
+const statOutput = document.getElementById('stat-output');
+const statWitness = document.getElementById('stat-witness');
+const statVerdict = document.getElementById('stat-verdict');
+const pathButtons = Array.from(document.querySelectorAll('[data-path]'));
+
+const PATHS = {
+  blocked: {
+    label: 'false green',
+    steps: [
+      { label: 'request returned expected rows', apply: { outputOk: true } },
+      { label: 'live config shows the flag is enabled', apply: { flagLive: true } },
+      { label: 'class load evidence never appears', apply: { classLoaded: false } },
+      { label: 'metric stays flat, so the path is unproven', apply: { metricMoved: false } }
+    ]
+  },
+  pass: {
+    label: 'proved path',
+    steps: [
+      { label: 'request returned expected rows', apply: { outputOk: true } },
+      { label: 'live config shows the flag is enabled', apply: { flagLive: true } },
+      { label: 'new class loads during the run', apply: { classLoaded: true } },
+      { label: 'new path metric moves above zero', apply: { metricMoved: true } }
+    ]
+  },
+  fallback: {
+    label: 'fallback fail',
+    steps: [
+      { label: 'request still returned expected rows', apply: { outputOk: true } },
+      { label: 'live config shows the flag is enabled', apply: { flagLive: true } },
+      { label: 'new class loads, so the attempt started', apply: { classLoaded: true } },
+      { label: 'must_not_log catches fallback to the old path', apply: { fallbackLog: true } }
+    ]
+  }
+};
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
+  return el;
+}
+
+function addText(parent, x, y, text, opts = {}) {
+  const el = svgEl('text', {
+    x, y,
+    fill: opts.fill || '#888',
+    'font-size': opts.size || '11',
+    'font-family': 'IBM Plex Mono',
+    'text-anchor': opts.anchor || 'start'
+  });
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function verdict() {
+  if (!activePath) {
+    return { label: 'READY', color: '#888', note: 'choose a path to play the evidence sequence' };
+  }
+  if (!state.outputOk) {
+    return { label: 'RUNNING', color: '#e6a64a', note: 'scenario is still driving the request' };
+  }
+  if (state.fallbackLog) {
+    return { label: 'FAIL', color: '#e64a4a', note: 'must_not_log fired: runtime fell back to the old path' };
+  }
+  if (state.flagLive && state.classLoaded && state.metricMoved && pathStep >= PATHS[activePath].steps.length) {
+    return { label: 'PASS', color: ACCENT, note: 'visible output and runtime evidence agree' };
+  }
+  if (pathStep >= PATHS[activePath].steps.length) {
+    return { label: 'BLOCKED', color: '#e6a64a', note: 'visible output passed but the witness did not prove the path' };
+  }
+  return { label: 'RUNNING', color: '#e6a64a', note: PATHS[activePath].steps[Math.max(0, pathStep - 1)]?.label || 'starting the chosen path' };
+}
+
+function drawCard(x, y, w, h, title, value, ok, opts = {}) {
+  const color = opts.fail ? '#e64a4a' : ok ? ACCENT : '#e6a64a';
+  const fill = opts.fail ? '#1a0a0a' : ok ? ACCENT_FILL_DARK : '#1a1205';
+  content.appendChild(svgEl('rect', {
+    x, y, width: w, height: h, rx: 3,
+    fill,
+    stroke: color,
+    'stroke-width': ok || opts.fail ? 1.5 : 1
+  }));
+  addText(content, x + 12, y + 22, title, { fill: '#666', size: '9' });
+  addText(content, x + 12, y + 45, value, { fill: color, size: '12' });
+}
+
+function drawPipeline(v) {
+  const steps = [
+    { label: 'send request', x: 54, ok: true },
+    { label: 'check rows', x: 220, ok: state.outputOk, fail: false },
+    { label: 'witness gate', x: 386, ok: v.label === 'PASS', fail: v.label === 'FAIL' },
+    { label: v.label, x: 552, ok: v.label === 'PASS', fail: v.label === 'FAIL' }
+  ];
+
+  steps.forEach((step, index) => {
+    const color = step.fail ? '#e64a4a' : step.ok ? ACCENT : '#e6a64a';
+    const fill = step.fail ? '#1a0a0a' : step.ok ? ACCENT_FILL_DARK : '#1a1205';
+    content.appendChild(svgEl('rect', {
+      x: step.x, y: 56, width: 112, height: 44, rx: 3,
+      fill,
+      stroke: color,
+      'stroke-width': 1.5
+    }));
+    addText(content, step.x + 56, 83, step.label, {
+      fill: color,
+      size: '10',
+      anchor: 'middle'
+    });
+    if (index < steps.length - 1) {
+      content.appendChild(svgEl('line', {
+        x1: step.x + 112, y1: 78, x2: steps[index + 1].x, y2: 78,
+        stroke: index < 2 ? ACCENT_FAINT : color,
+        'stroke-width': 1
+      }));
+      content.appendChild(svgEl('polygon', {
+        points: `${steps[index + 1].x},78 ${steps[index + 1].x - 7},74 ${steps[index + 1].x - 7},82`,
+        fill: index < 2 ? ACCENT_FAINT : color
+      }));
+    }
+  });
+}
+
+function render() {
+  content.innerHTML = '';
+  const v = verdict();
+  const witnessCount = [state.flagLive, state.classLoaded, state.metricMoved].filter(Boolean).length;
+
+  drawPipeline(v);
+
+  addText(content, 40, 140, 'SCENARIO LANE', { fill: '#666', size: '10' });
+  drawCard(
+    40,
+    155,
+    200,
+    58,
+    'visible output',
+    state.outputOk ? 'expected rows returned' : activePath ? 'request pending' : 'waiting for path',
+    state.outputOk
+  );
+
+  addText(content, 280, 140, 'WITNESS LANE', { fill: '#666', size: '10' });
+  drawCard(280, 155, 122, 58, 'live config', state.flagLive ? 'flag true' : 'unknown', state.flagLive);
+  drawCard(414, 155, 122, 58, 'class load', state.classLoaded ? 'seen' : 'missing', state.classLoaded);
+  drawCard(548, 155, 132, 58, 'metric delta', state.metricMoved ? '> 0' : 'flat', state.metricMoved);
+
+  addText(content, 280, 242, 'must_not_log', { fill: '#666', size: '10' });
+  drawCard(390, 224, 170, 48, 'fallback log', state.fallbackLog ? 'found' : 'absent', !state.fallbackLog, { fail: state.fallbackLog });
+
+  statusText.textContent = `${v.label}: ${v.note}`;
+  statusSub.textContent = state.outputOk ? 'the command returning zero is not enough by itself' : 'the scenario failed before the witness can rescue it';
+  statusText.setAttribute('fill', v.color);
+  statusPanel.setAttribute('stroke', v.color);
+
+  statPath.textContent = activePath ? PATHS[activePath].label : 'choose one';
+  statOutput.textContent = state.outputOk ? 'ok' : activePath ? 'pending' : 'waiting';
+  statOutput.className = state.outputOk ? '' : activePath ? 'warn' : '';
+  statWitness.textContent = `${witnessCount}/3`;
+  statWitness.className = witnessCount === 3 && !state.fallbackLog ? '' : 'warn';
+  statVerdict.textContent = v.label;
+  statVerdict.className = v.label === 'PASS' ? '' : v.label === 'FAIL' ? 'fail' : 'warn';
+
+  pathButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.path === activePath);
+  });
+}
+
+function stopPlayback() {
+  if (startTimer) clearTimeout(startTimer);
+  if (playTimer) clearInterval(playTimer);
+  startTimer = null;
+  playTimer = null;
+}
+
+function resetState(path = null) {
+  state = { outputOk: false, flagLive: false, classLoaded: false, metricMoved: false, fallbackLog: false };
+  activePath = path;
+  pathStep = 0;
+}
+
+function advancePath() {
+  if (!activePath) return;
+  const steps = PATHS[activePath].steps;
+  if (pathStep >= steps.length) {
+    stopPlayback();
+    render();
+    return;
+  }
+  Object.assign(state, steps[pathStep].apply);
+  pathStep += 1;
+  render();
+  if (pathStep >= steps.length) stopPlayback();
+}
+
+function playPath(path) {
+  stopPlayback();
+  resetState(path);
+  render();
+  startTimer = setTimeout(() => {
+    advancePath();
+    playTimer = setInterval(advancePath, 850);
+  }, 220);
+}
+
+pathButtons.forEach((button) => {
+  button.addEventListener('click', () => playPath(button.dataset.path));
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopPlayback();
+  resetState();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
