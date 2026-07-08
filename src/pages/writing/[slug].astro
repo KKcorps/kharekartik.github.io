@@ -46,7 +46,7 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 			const isLight = document.documentElement.dataset.theme === 'light';
 
 			return {
-				theme: isLight ? 'base' : 'base',
+				theme: 'base' as const,
 				themeVariables: {
 					background: articleBg,
 					primaryColor: isLight ? '#edf2e9' : '#0d120d',
@@ -96,7 +96,7 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 			});
 		};
 
-		const syncDiagramScale = (figure) => {
+		const syncDiagramScale = (figure: Element) => {
 			if (!(figure instanceof HTMLElement)) {
 				return;
 			}
@@ -115,7 +115,7 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 			viewport.style.setProperty('--mermaid-scale', String(nextScale));
 		};
 
-		const attachDiagramControls = (figure) => {
+		const attachDiagramControls = (figure: Element) => {
 			if (!(figure instanceof HTMLElement) || figure.dataset.mermaidReady === 'true') {
 				return;
 			}

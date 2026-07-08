@@ -2049,6 +2049,319 @@ body.article-page .site-main {
 	}
 }
 
+.article-page .prose .staff-manual-disclaimer {
+	border-left: 2px solid var(--accent);
+	padding: 10px 16px;
+	margin-bottom: 36px;
+	font-size: 11px;
+	color: var(--article-prose);
+	letter-spacing: 0.04em;
+	font-style: italic;
+}
+
+.article-page .prose .staff-manual-disclaimer p {
+	margin: 0;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	line-height: 1.7;
+	color: var(--article-prose);
+}
+
+.article-page .prose .staff-manual {
+	--staff-paper: #20231f;
+	--staff-ink: #e9e4d2;
+	--staff-pencil: #9c967e;
+	--staff-blue: #82b2e6;
+	--staff-red: #e68b80;
+	--staff-green: #7cc494;
+	--staff-hi: rgba(255, 214, 90, 0.3);
+	--staff-card: #282c26;
+	--staff-rule: #3b4038;
+	--staff-shadow: rgba(0, 0, 0, 0.35);
+	width: 100%;
+	max-width: none;
+	margin: 0;
+	padding: 2px 0 56px;
+	color: var(--staff-ink);
+	font-family: Charter, 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+	font-size: 19px;
+	line-height: 1.72;
+}
+
+html[data-theme='light'] .article-page .prose .staff-manual {
+	--staff-paper: #fffef8;
+	--staff-ink: #2a261d;
+	--staff-pencil: #8d8471;
+	--staff-blue: #2e6db4;
+	--staff-red: #d25050;
+	--staff-green: #3f9b63;
+	--staff-hi: #ffe477;
+	--staff-card: #fffbee;
+	--staff-rule: #e7e0ca;
+	--staff-shadow: rgba(90, 80, 50, 0.16);
+}
+
+.article-page .prose .staff-manual .hw {
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', 'Bradley Hand', cursive;
+}
+
+.article-page .prose .staff-manual h2 {
+	font-family: 'Avenir Next', Avenir, 'Segoe UI', Verdana, sans-serif;
+	font-weight: 800;
+	font-size: 28px;
+	line-height: 1.25;
+	letter-spacing: 0;
+	margin: 64px 0 6px;
+	color: var(--staff-ink);
+	text-wrap: balance;
+}
+
+.article-page .prose .staff-manual h2::after {
+	content: '';
+	display: block;
+	width: 66px;
+	height: 5px;
+	margin-top: 9px;
+	background: var(--staff-blue);
+	border-radius: 3px;
+	transform: rotate(-1.2deg);
+}
+
+.article-page .prose .staff-manual h3 {
+	font-family: 'Avenir Next', Avenir, 'Segoe UI', Verdana, sans-serif;
+	font-weight: 700;
+	font-size: 20.5px;
+	line-height: 1.35;
+	letter-spacing: 0;
+	margin: 38px 0 2px;
+	color: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual p,
+.article-page .prose .staff-manual li {
+	font-family: inherit;
+	font-size: inherit;
+	line-height: inherit;
+	color: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual p {
+	margin: 16px 0;
+}
+
+.article-page .prose .staff-manual ul {
+	padding-left: 26px;
+	margin: 16px 0;
+	color: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual li {
+	margin: 10px 0;
+}
+
+.article-page .prose .staff-manual strong {
+	color: inherit;
+	font-weight: 700;
+}
+
+.article-page .prose .staff-manual mark {
+	background: linear-gradient(178deg, transparent 8%, var(--staff-hi) 8% 92%, transparent 92%);
+	color: inherit;
+	padding: 0 3px;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+}
+
+.article-page .prose .staff-manual .part {
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	color: var(--staff-pencil);
+	font-size: 15px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	margin: 78px 0 -40px;
+	text-align: center;
+	transform: rotate(-0.5deg);
+}
+
+.article-page .prose .staff-manual .part b {
+	color: var(--staff-red);
+	font-weight: 400;
+}
+
+.article-page .prose .staff-manual blockquote {
+	margin: 20px 0 20px 6px;
+	padding: 2px 0 2px 18px;
+	border-left: 3px solid var(--staff-blue);
+	font-style: italic;
+	color: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual blockquote p {
+	margin: 8px 0;
+	color: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual .pad {
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	font-size: 16.5px;
+	line-height: 31px;
+	white-space: pre-wrap;
+	color: var(--staff-ink);
+	background: var(--staff-card);
+	background-image:
+		repeating-linear-gradient(to bottom, transparent 0 30px, var(--staff-rule) 30px 31px),
+		linear-gradient(to right, transparent 30px, var(--staff-red) 30px 31.5px, transparent 31.5px);
+	background-origin: border-box;
+	border: 2px solid var(--staff-ink);
+	border-radius: 5px;
+	box-shadow: 4px 4px 0 var(--staff-shadow);
+	padding: 14px 20px 14px 44px;
+	margin: 24px 2px;
+	transform: rotate(-0.35deg);
+	overflow-x: auto;
+}
+
+.article-page .prose .staff-manual .pad.straight {
+	transform: rotate(0.3deg);
+}
+
+.article-page .prose .staff-manual figure {
+	margin: 36px 0;
+	text-align: center;
+}
+
+.article-page .prose .staff-manual figure svg {
+	width: 100%;
+	max-width: none;
+	height: auto;
+	display: block;
+	margin: 0 auto;
+}
+
+.article-page .prose .staff-manual figcaption {
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	color: var(--staff-pencil);
+	font-size: 15px;
+	line-height: 1.5;
+	margin-top: 6px;
+	transform: rotate(-0.4deg);
+}
+
+.article-page .prose .staff-manual svg text {
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	fill: var(--staff-ink);
+}
+
+.article-page .prose .staff-manual svg .tp {
+	fill: var(--staff-pencil);
+}
+
+.article-page .prose .staff-manual svg .tb {
+	fill: var(--staff-blue);
+}
+
+.article-page .prose .staff-manual svg .tr {
+	fill: var(--staff-red);
+}
+
+.article-page .prose .staff-manual svg .tg {
+	fill: var(--staff-green);
+}
+
+.article-page .prose .staff-manual svg .s {
+	stroke: var(--staff-ink);
+	stroke-width: 3;
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .staff-manual svg .s2 {
+	stroke: var(--staff-ink);
+	stroke-width: 2;
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .staff-manual svg .sb {
+	stroke: var(--staff-blue);
+	stroke-width: 3;
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .staff-manual svg .sr {
+	stroke: var(--staff-red);
+	stroke-width: 3;
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .staff-manual svg .sg {
+	stroke: var(--staff-green);
+	stroke-width: 3;
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .staff-manual svg .sp {
+	stroke: var(--staff-pencil);
+	stroke-width: 2;
+	fill: none;
+	stroke-linecap: round;
+	stroke-dasharray: 7 7;
+}
+
+.article-page .prose .staff-manual svg .fillpaper {
+	fill: var(--staff-paper);
+}
+
+.article-page .prose .staff-manual .doodle {
+	text-align: center;
+	color: var(--staff-pencil);
+	margin: 56px 0 0;
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	font-size: 20px;
+	letter-spacing: 0.3em;
+}
+
+.article-page .prose .staff-manual a {
+	color: var(--staff-blue);
+}
+
+.article-page .prose .staff-manual footer {
+	margin-top: 80px;
+	padding-top: 18px;
+	border-top: 2px dashed var(--staff-rule);
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', cursive;
+	color: var(--staff-pencil);
+	font-size: 15px;
+	line-height: 1.6;
+}
+
+@media (max-width: 520px) {
+	.article-page .prose .staff-manual {
+		font-size: 17.5px;
+	}
+
+	.article-page .prose .staff-manual h2 {
+		font-size: 24px;
+	}
+
+	.article-page .prose .staff-manual .pad {
+		font-size: 15px;
+		line-height: 28px;
+		background-image:
+			repeating-linear-gradient(to bottom, transparent 0 27px, var(--staff-rule) 27px 28px),
+			linear-gradient(to right, transparent 24px, var(--staff-red) 24px 25.5px, transparent 25.5px);
+		padding-left: 36px;
+	}
+}
+
 .article-page .post-nav {
 	border-top: 1px solid var(--article-rule);
 	margin-top: 64px;
