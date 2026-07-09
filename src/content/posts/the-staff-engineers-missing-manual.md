@@ -13,7 +13,7 @@ featured: false
 ---
 
 <aside class="staff-manual-disclaimer">
-  <p>A quick note before the manual starts: I did not write this the normal way. Claude Fable wrote the first version using my Codex chronicle memories about the places where I personally struggle with staff engineering: framing messy work, making decisions legible, handing off context without hoarding it and keeping organizations calmer after I touch a problem. It is deliberately written in the style of Tim Urban's Wait But Why explainers. The annoying part is that it came out too useful to be sitting in my Claude artifacts dir, so I am sharing it.</p>
+  <p>A quick note before the manual starts: I did not write this the normal way. Claude Fable wrote this complete post using my Codex chronicle memories about the places where I personally struggle with staff engineering: framing messy work, making decisions legible, handing off context without hoarding it and keeping organizations calmer after I touch a problem. It is deliberately written in the style of Tim Urban's Wait But Why explainers. The annoying part is that it came out too useful to be sitting in my Claude artifacts dir, so I am sharing it.</p>
 </aside>
 
 <div class="staff-manual">
