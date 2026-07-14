@@ -37,8 +37,8 @@ html[data-theme='dark'] {
 	--article-rule: #222;
 	--article-strong: #ffffff;
 	--article-title: #f0f0f0;
-	--article-muted: #555;
-	--article-muted-strong: #333;
+	--article-muted: #7d838e;
+	--article-muted-strong: #626b78;
 	--article-prose: #aaa;
 	--article-heading: #e0e0e0;
 	--article-subheading: #ccc;
@@ -70,7 +70,7 @@ html[data-theme='light'] {
 	--article-strong: #121912;
 	--article-title: #1d271d;
 	--article-muted: #4f5f4f;
-	--article-muted-strong: #748774;
+	--article-muted-strong: #667262;
 	--article-prose: #313f31;
 	--article-heading: #1f2a1f;
 	--article-subheading: #2a392a;
@@ -2049,6 +2049,129 @@ body.article-page .site-main {
 	}
 }
 
+/* Hand-drawn editorial explainers used across writing posts. */
+.article-page .prose .wbw-explainer {
+	--wbw-paper: #11140f;
+	--wbw-card: #181c16;
+	--wbw-ink: #e9e4d2;
+	--wbw-pencil: #91998d;
+	--wbw-blue: #82b2e6;
+	--wbw-red: #e68b80;
+	--wbw-green: #7cc494;
+	margin: 42px 0;
+	text-align: center;
+}
+
+html[data-theme='light'] .article-page .prose .wbw-explainer {
+	--wbw-paper: #f4efe4;
+	--wbw-card: #fffbee;
+	--wbw-ink: #2a261d;
+	--wbw-pencil: #7c776b;
+	--wbw-blue: #2e6db4;
+	--wbw-red: #c94d4d;
+	--wbw-green: #338b56;
+}
+
+.article-page .prose .wbw-explainer svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	margin: 0 auto;
+	overflow: visible;
+}
+
+.article-page .prose .wbw-explainer figcaption {
+	margin-top: 7px;
+	color: var(--wbw-pencil);
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', 'Bradley Hand', cursive;
+	font-size: 15px;
+	line-height: 1.45;
+	transform: rotate(-0.35deg);
+}
+
+.article-page .prose .wbw-explainer svg text {
+	fill: var(--wbw-ink);
+	font-family: 'Chalkboard SE', 'Comic Sans MS', 'Segoe Print', 'Bradley Hand', cursive;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-muted {
+	fill: var(--wbw-pencil);
+}
+
+.article-page .prose .wbw-explainer svg .wbw-blue-text {
+	fill: var(--wbw-blue);
+}
+
+.article-page .prose .wbw-explainer svg .wbw-red-text {
+	fill: var(--wbw-red);
+}
+
+.article-page .prose .wbw-explainer svg .wbw-green-text {
+	fill: var(--wbw-green);
+}
+
+.article-page .prose .wbw-explainer svg .wbw-line,
+.article-page .prose .wbw-explainer svg .wbw-thin,
+.article-page .prose .wbw-explainer svg .wbw-blue,
+.article-page .prose .wbw-explainer svg .wbw-red,
+.article-page .prose .wbw-explainer svg .wbw-green,
+.article-page .prose .wbw-explainer svg .wbw-dash {
+	fill: none;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-line {
+	stroke: var(--wbw-ink);
+	stroke-width: 3;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-thin {
+	stroke: var(--wbw-ink);
+	stroke-width: 2;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-blue {
+	stroke: var(--wbw-blue);
+	stroke-width: 3;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-red {
+	stroke: var(--wbw-red);
+	stroke-width: 3;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-green {
+	stroke: var(--wbw-green);
+	stroke-width: 3;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-dash {
+	stroke: var(--wbw-pencil);
+	stroke-width: 2;
+	stroke-dasharray: 7 7;
+}
+
+.article-page .prose .wbw-explainer svg .wbw-paper {
+	fill: var(--wbw-paper);
+}
+
+.article-page .prose .wbw-explainer svg .wbw-card {
+	fill: var(--wbw-card);
+	stroke: var(--wbw-ink);
+	stroke-width: 2;
+}
+
+@media (max-width: 520px) {
+	.article-page .prose .wbw-explainer {
+		margin: 34px 0;
+	}
+
+	.article-page .prose .wbw-explainer figcaption {
+		font-size: 13px;
+	}
+}
+
 .article-page .prose .staff-manual-disclaimer {
 	border-left: 2px solid var(--accent);
 	padding: 10px 16px;
@@ -2424,6 +2547,70 @@ html[data-theme='light'] .article-page .prose .staff-manual {
 .article-page .footer-links a:hover {
 	color: var(--article-text);
 	border-color: var(--article-rule);
+}
+
+@media (min-width: 1440px) {
+	.article-page .shell {
+		max-width: 1200px;
+		padding-inline: 64px;
+	}
+
+	.article-page .logo {
+		font-size: 17px;
+	}
+
+	.article-page .article-nav .nav-link,
+	.article-page .breadcrumb,
+	.article-page .article-meta,
+	.article-page .post-nav a,
+	.article-page .footer-links a {
+		font-size: 12px;
+	}
+
+	.article-page .article-title {
+		font-size: clamp(72px, 3.2vw, 82px);
+	}
+
+	.article-page .article-body {
+		padding-top: 44px;
+	}
+
+	.article-page .prose {
+		font-size: 17px;
+	}
+
+	.article-page .prose p,
+	.article-page .prose li {
+		font-size: 17px;
+		line-height: 1.85;
+	}
+
+	.article-page .prose > blockquote:first-child,
+	.article-page .prose > blockquote:first-child p {
+		font-size: 13px;
+	}
+
+	.article-page .prose h2 {
+		font-size: 38px;
+	}
+
+	.article-page .prose h3 {
+		font-size: 24px;
+	}
+
+	.article-page .prose h4 {
+		font-size: 19px;
+	}
+
+	.article-page .prose code,
+	.article-page .prose pre,
+	.article-page .prose table {
+		font-size: 14px;
+	}
+
+	.article-page .post-nav .nav-label {
+		font-size: 11px;
+	}
 }
 
 @media (max-width: 900px) {

@@ -879,8 +879,8 @@ const postsByYear = Array.from(
 			--home-border: #1a1d26;
 			--home-border-hi: #262b36;
 			--home-text: #cdd3dd;
-			--home-text-mid: #6f7788;
-			--home-text-low: #3d4556;
+			--home-text-mid: #8b94a6;
+			--home-text-low: #737d90;
 			background: var(--home-bg);
 			color: var(--home-text);
 		}
@@ -891,8 +891,8 @@ const postsByYear = Array.from(
 			--home-border: #d8cebc;
 			--home-border-hi: #c7baa3;
 			--home-text: #29241d;
-			--home-text-mid: #726658;
-			--home-text-low: #ab9c89;
+			--home-text-mid: #5f574e;
+			--home-text-low: #756a5c;
 			background: var(--home-bg);
 			color: var(--home-text);
 		}
@@ -1494,6 +1494,107 @@ const postsByYear = Array.from(
 			to {
 				opacity: 1;
 				transform: translateY(0);
+			}
+		}
+
+		@media (min-width: 1440px) {
+			:global(body.terminal-home) {
+				font-size: 15px;
+			}
+
+			.terminal-page {
+				max-width: 1400px;
+				padding-inline: 64px;
+			}
+
+			.header-inner {
+				gap: 64px;
+				padding: 64px 0 48px;
+			}
+
+			.site-name {
+				font-size: 18px;
+			}
+
+			.name-cursor {
+				width: 9px;
+				height: 17px;
+			}
+
+			.main-nav a,
+			.status {
+				font-size: 12px;
+			}
+
+			.site-desc {
+				max-width: 440px;
+				font-size: 21px;
+			}
+
+			.home-theme-toggle {
+				font-size: 11px;
+			}
+
+			.ascii-bug-block__cta {
+				font-size: 9px;
+			}
+
+			#ascii-art {
+				--ascii-cell-size: 1.05rem;
+				padding: 18px 20px;
+			}
+
+			.prompt-user,
+			.prompt-at,
+			.prompt-host,
+			.prompt-sep,
+			.prompt-path,
+			.prompt-dollar,
+			.ls-header {
+				font-size: 13px;
+			}
+
+			.terminal-section {
+				padding: 32px 0 28px;
+			}
+
+			.posts-section {
+				padding-top: 38px;
+			}
+
+			.year-sep {
+				font-size: 13px;
+			}
+
+			.post-row {
+				grid-template-columns: 140px 1fr;
+				gap: 0 28px;
+				padding: 18px 0;
+			}
+
+			.post-row::before {
+				top: 18px;
+				font-size: 12px;
+			}
+
+			.post-date {
+				font-size: 12px;
+			}
+
+			.post-title {
+				margin-bottom: 4px;
+				font-size: 16px;
+			}
+
+			.post-hook {
+				font-size: 14px;
+				line-height: 1.55;
+			}
+
+			.footer-left,
+			.footer-bug,
+			.footer-links a {
+				font-size: 11px;
 			}
 		}
 
