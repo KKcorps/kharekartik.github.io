@@ -115,9 +115,16 @@ const postsByYear = Array.from(
 					</div>
 				</div>
 
-				<div class="ascii-bug-block" title="it knows what you did in production">
+				<a
+					class="ascii-bug-block"
+					href={withBase('/arcade/pac-man/')}
+					data-arcade-base={withBase('/arcade/')}
+					aria-label="Play the featured ASCII arcade game"
+					title="play the featured ASCII arcade game"
+				>
 					<div id="ascii-art" role="img" aria-label="animated retro arcade ascii art"></div>
-				</div>
+					<span class="ascii-bug-block__cta" aria-hidden="true">[ play ]</span>
+				</a>
 			</div>
 
 			<div class="h-rule"></div>
@@ -808,6 +815,11 @@ const postsByYear = Array.from(
 
 			const selectedArt = arcadeArt[artIndex];
 			const animationFrames = selectedArt.frames;
+			if (bugBlock instanceof HTMLAnchorElement) {
+				const arcadeBase = bugBlock.dataset.arcadeBase ?? '/arcade/';
+				bugBlock.href = `${arcadeBase}${selectedArt.name}/`;
+				bugBlock.setAttribute('aria-label', `Play ${selectedArt.name.replaceAll('-', ' ')}`);
+			}
 			renderArcadeArt(animationFrames, selectedArt.title, artFrameStep);
 
 			if (animationFrames.length > 1) {
@@ -1134,10 +1146,27 @@ const postsByYear = Array.from(
 		}
 
 		.ascii-bug-block {
+			position: relative;
+			display: block;
 			flex-shrink: 0;
 			padding-top: 0;
+			color: inherit;
+			text-decoration: none;
 			user-select: none;
-			cursor: default;
+			cursor: pointer;
+		}
+
+		.ascii-bug-block__cta {
+			position: absolute;
+			right: 8px;
+			bottom: 6px;
+			padding: 1px 4px;
+			background: var(--home-bg);
+			color: var(--home-muted);
+			font-size: 7px;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			transition: color 140ms ease;
 		}
 
 		#ascii-art {
@@ -1219,6 +1248,16 @@ const postsByYear = Array.from(
 				0 0 14px var(--home-accent-glow),
 				0 0 36px var(--home-accent-glow),
 				0 0 60px var(--home-accent-dim);
+		}
+
+		.ascii-bug-block:hover .ascii-bug-block__cta,
+		.ascii-bug-block:focus-visible .ascii-bug-block__cta {
+			color: var(--home-accent);
+		}
+
+		.ascii-bug-block:focus-visible {
+			outline: 1px solid var(--home-accent);
+			outline-offset: 4px;
 		}
 
 		.h-rule {

@@ -10,6 +10,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "test:arcade": "npm run build && node scripts/verify-ascii-arcade.mjs",
     "astro": "astro",
     "import:medium": "node scripts/import-medium.mjs"
   },

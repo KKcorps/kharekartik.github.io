@@ -1,0 +1,159 @@
+---
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { arcadeGames, type ArcadeGame } from '../../data/arcade';
+import '../../styles/arcade.css';
+
+export function getStaticPaths() {
+	return arcadeGames.map((game) => ({ params: { game: game.slug }, props: { game } }));
+}
+
+interface Props {
+	game: ArcadeGame;
+}
+
+const { game } = Astro.props;
+const gameIndex = arcadeGames.findIndex((entry) => entry.slug === game.slug);
+const nextGame = arcadeGames[(gameIndex + 1) % arcadeGames.length];
+const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const controlKeys = [
+	{ control: 'up', glyph: '↑', label: 'Up' },
+	{ control: 'left', glyph: '←', label: 'Left' },
+	{ control: 'down', glyph: '↓', label: 'Down' },
+	{ control: 'right', glyph: '→', label: 'Right' },
+];
+---
+
+<SiteLayout
+	title={`${game.title} // ASCII Arcade`}
+	description={`Play ${game.title}, a mobile-friendly ASCII arcade game.`}
+	hideChrome
+	bodyClass="arcade-page"
+>
+	<div class="arcade-shell" data-arcade-game={game.slug}>
+		<header class="arcade-header">
+			<a class="arcade-header__back" href={withBase('/')} aria-label="Back to home">
+				<span aria-hidden="true">←</span> ~/home
+			</a>
+
+			<div class="arcade-header__identity">
+				<span class="arcade-header__kicker">KK // ASCII ARCADE</span>
+				<h1>{game.title}</h1>
+			</div>
+
+			<a class="arcade-header__next" href={withBase(`/arcade/${nextGame.slug}/`)}>
+				next: {nextGame.title} <span aria-hidden="true">→</span>
+			</a>
+		</header>
+
+		<main class="arcade-workspace">
+			<section class="arcade-machine" aria-labelledby="arcade-game-title">
+				<div class="arcade-command" id="arcade-game-title">
+					<span class="arcade-command__prompt">kartik@site:~/arcade$</span>
+					<span>{game.command}</span>
+				</div>
+
+				<div class="arcade-hud" aria-label="Game status">
+					<div>
+						<span class="arcade-hud__label">score</span>
+						<strong id="arcade-score">00000</strong>
+					</div>
+					<div class="arcade-hud__center">
+						<span class="arcade-hud__signal" aria-hidden="true"></span>
+						<strong id="arcade-state">READY</strong>
+					</div>
+					<div>
+						<span class="arcade-hud__label" id="arcade-meta-label">lives</span>
+						<strong id="arcade-meta">03</strong>
+					</div>
+				</div>
+
+				<div class="arcade-screen">
+					<canvas
+						id="arcade-canvas"
+						width="600"
+						height="440"
+						tabindex="0"
+						role="img"
+						aria-label={`${game.title} game board. ${game.objective}`}
+					></canvas>
+					<div class="arcade-screen__overlay" id="arcade-overlay">
+						<p class="arcade-screen__eyebrow" id="arcade-overlay-eyebrow">READY PLAYER</p>
+						<h2 id="arcade-overlay-title">{game.title}</h2>
+						<p id="arcade-overlay-copy">{game.description}</p>
+						<button id="arcade-start" type="button">[ ENTER ] START</button>
+					</div>
+				</div>
+
+				<p class="arcade-announcer" id="arcade-announcer" aria-live="polite">
+					{game.objective}
+				</p>
+			</section>
+
+			<aside class="arcade-controls" aria-label={`${game.title} controls`}>
+				<div class="arcade-controls__intro">
+					<span class="arcade-controls__label">// controls</span>
+					<p>{game.objective}</p>
+				</div>
+
+				<div class="arcade-controller">
+					<div class="arcade-dpad" aria-label="Direction pad">
+						{
+							controlKeys.map((key) => (
+								<button
+									class={`arcade-control arcade-control--${key.control}`}
+									class:list={{ 'is-unused': !game.directions.includes(key.control as ArcadeGame['directions'][number]) }}
+									type="button"
+									data-control={key.control}
+									aria-label={key.label}
+									disabled={!game.directions.includes(key.control as ArcadeGame['directions'][number])}
+								>
+									{key.glyph}
+								</button>
+							))
+						}
+						<span class="arcade-dpad__core" aria-hidden="true">+</span>
+					</div>
+
+					<div class="arcade-actions">
+						<button
+							class="arcade-action arcade-action--secondary"
+							class:list={{ 'is-unused': !game.secondary }}
+							type="button"
+							data-control="secondary"
+							disabled={!game.secondary}
+						>
+							<span>{game.secondary ?? '—'}</span>
+							<small>shift</small>
+						</button>
+						<button
+							class="arcade-action arcade-action--primary"
+							class:list={{ 'is-unused': !game.primary }}
+							type="button"
+							data-control="action"
+							disabled={!game.primary}
+						>
+							<span>{game.primary ?? '—'}</span>
+							<small>space</small>
+						</button>
+					</div>
+				</div>
+
+				<div class="arcade-utilities">
+					<button type="button" data-control="pause">[ p ] pause</button>
+					<button type="button" data-control="restart">[ r ] restart</button>
+				</div>
+
+				<p class="arcade-keyboard-note">Keyboard: arrows or WASD · Space · Shift</p>
+			</aside>
+		</main>
+
+		<footer class="arcade-footer">
+			<span>game {String(gameIndex + 1).padStart(2, '0')} / {String(arcadeGames.length).padStart(2, '0')}</span>
+			<span>touch controls online</span>
+		</footer>
+	</div>
+
+	<script>
+		import '../../scripts/ascii-arcade';
+	</script>
+</SiteLayout>
