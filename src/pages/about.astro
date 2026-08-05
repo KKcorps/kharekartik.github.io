@@ -399,7 +399,9 @@ const accentPalettes = [
 		</footer>
 	</div>
 
-	<script is:inline>
+	<script>
+		import { ChipSound } from '../scripts/chip-sound';
+
 		(() => {
 			const root = document.documentElement;
 			const themeValue = document.querySelector('[data-about-theme]');
@@ -516,40 +518,7 @@ const accentPalettes = [
 				return;
 			}
 
-			const makeChipSound = () => {
-				let context = null;
-				const patterns = {
-					move: [[330, 0, 0.03]],
-					wall: [[110, 0, 0.05]],
-					reset: [[220, 0, 0.04], [440, 0.045, 0.05]],
-					win: [[523, 0, 0.06], [659, 0.065, 0.06], [880, 0.13, 0.1]],
-				};
-				return (effect) => {
-					const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-					if (!AudioContextClass || !patterns[effect]) {
-						return;
-					}
-					context ||= new AudioContextClass();
-					if (context.state === 'suspended') {
-						context.resume();
-					}
-					const now = context.currentTime;
-					patterns[effect].forEach(([frequency, offset, duration]) => {
-						const oscillator = context.createOscillator();
-						const gain = context.createGain();
-						oscillator.type = 'square';
-						oscillator.frequency.setValueAtTime(frequency, now + offset);
-						gain.gain.setValueAtTime(0.0001, now + offset);
-						gain.gain.exponentialRampToValueAtTime(0.035, now + offset + 0.005);
-						gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + duration);
-						oscillator.connect(gain);
-						gain.connect(context.destination);
-						oscillator.start(now + offset);
-						oscillator.stop(now + offset + duration + 0.01);
-					});
-				};
-			};
-			const playDungeonSound = makeChipSound();
+			const dungeonSound = new ChipSound();
 
 			const rows = 14;
 			const columns = 36;
@@ -618,7 +587,7 @@ const accentPalettes = [
 
 				setDungeonStatus('route the packet<br>through the chaos.');
 				renderDungeon();
-				playDungeonSound('reset');
+				dungeonSound.play('start');
 			};
 
 			const movePlayer = (deltaRow, deltaColumn) => {
@@ -633,7 +602,7 @@ const accentPalettes = [
 					grid[nextRow][nextColumn] === '#'
 				) {
 					setDungeonStatus('packet hit a wall.<br>reroute.');
-					playDungeonSound('wall');
+					dungeonSound.play('wall');
 					return;
 				}
 
@@ -644,13 +613,13 @@ const accentPalettes = [
 				if (player.row === goal.row && player.column === goal.column) {
 					renderDungeon();
 					setDungeonStatus(`packet delivered<br>in ${moves} hops.`);
-					playDungeonSound('win');
+					dungeonSound.play('win');
 					return;
 				}
 
 				renderDungeon();
 				setDungeonStatus('route stable.<br>keep pushing.');
-				playDungeonSound('move');
+				dungeonSound.play('move');
 			};
 
 			document.addEventListener('keydown', (event) => {
