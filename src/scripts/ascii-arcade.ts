@@ -1,4 +1,4 @@
-export {};
+import { ChipSound, type SoundEffect } from './chip-sound';
 
 type Control = 'up' | 'down' | 'left' | 'right' | 'action' | 'secondary' | 'pause' | 'restart';
 type Phase = 'ready' | 'playing' | 'paused' | 'won' | 'lost';
@@ -8,6 +8,7 @@ interface EngineHost {
 	win(message: string): void;
 	lose(message: string): void;
 	announce(message: string): void;
+	sound(effect: SoundEffect): void;
 }
 
 interface ArcadeGameInstance {
@@ -263,7 +264,10 @@ class PacManGame extends BaseGame {
 			const nextY = this.player.y + this.direction.y;
 			if (!this.isWall(nextX, nextY)) this.player = { x: nextX, y: nextY };
 			const pelletKey = keyFor(this.player.x, this.player.y);
-			if (this.pellets.delete(pelletKey)) this.score += 10;
+			if (this.pellets.delete(pelletKey)) {
+				this.score += 10;
+				host.sound('score');
+			}
 			if (this.pellets.size === 0) host.win('Maze cleared. No dots left behind.');
 		}
 
@@ -349,6 +353,7 @@ class SpaceInvadersGame extends BaseGame {
 		this.fireCooldown = Math.max(0, this.fireCooldown - delta);
 		this.invulnerable = Math.max(0, this.invulnerable - delta);
 		if (input.consume('action') && this.fireCooldown === 0) {
+			host.sound('shoot');
 			this.bullets.push({ x: this.playerX, y: ROWS - 3, enemy: false });
 			this.fireCooldown = 0.22;
 		}
@@ -387,6 +392,7 @@ class SpaceInvadersGame extends BaseGame {
 				if (hit) {
 					hit.alive = false;
 					this.score += 100;
+					host.sound('hit');
 					return false;
 				}
 			} else if (this.invulnerable === 0 && Math.abs(bullet.x - this.playerX) < 1.5 && bullet.y >= ROWS - 3.4) {
@@ -457,6 +463,7 @@ class PongGame extends BaseGame {
 		if (this.ball.y <= 1.5 || this.ball.y >= ROWS - 2.5) {
 			this.ball.y = clamp(this.ball.y, 1.5, ROWS - 2.5);
 			this.ball.vy *= -1;
+			host.sound('wall');
 		}
 
 		if (
@@ -469,6 +476,7 @@ class PongGame extends BaseGame {
 			this.ball.x = 2.2;
 			this.ball.vx = Math.abs(this.ball.vx) * 1.035;
 			this.ball.vy += (this.ball.y - (this.playerY + 1.5)) * 2;
+			host.sound('hit');
 		}
 		if (
 			this.ball.vx > 0 &&
@@ -480,6 +488,7 @@ class PongGame extends BaseGame {
 			this.ball.x = COLS - 3.2;
 			this.ball.vx = -Math.abs(this.ball.vx) * 1.035;
 			this.ball.vy += (this.ball.y - (this.cpuY + 1.5)) * 1.8;
+			host.sound('hit');
 		}
 
 		if (this.ball.x < 0) {
@@ -600,6 +609,7 @@ class TetrisGame extends BaseGame {
 		if (cleared > 0) {
 			this.lines += cleared;
 			this.score += [0, 100, 300, 500, 800][cleared] ?? cleared * 250;
+			host.sound(cleared > 1 ? 'power' : 'score');
 			this.metaValue = `${String(this.lines).padStart(2, '0')}/10`;
 			if (this.lines >= 10) {
 				host.win('Ten lines cleared. Stack committed cleanly.');
@@ -617,7 +627,10 @@ class TetrisGame extends BaseGame {
 			if (!this.move(0, 1)) this.lockPiece(host);
 			else this.score += 1;
 		}
-		if (input.consume('action')) this.rotatePiece();
+		if (input.consume('action')) {
+			this.rotatePiece();
+			host.sound('move');
+		}
 		if (input.consume('secondary')) {
 			let dropped = 0;
 			while (this.move(0, 1)) dropped += 1;
@@ -715,6 +728,7 @@ class SnakeGame extends BaseGame {
 		this.snake.unshift(next);
 		if (next.x === this.food.x && next.y === this.food.y) {
 			this.score += 1;
+			host.sound('score');
 			this.metaValue = `${String(this.score).padStart(2, '0')}/12`;
 			if (this.score >= 12) host.win('Twelve apples collected. Process healthy.');
 			else this.placeFood();
@@ -763,6 +777,7 @@ class BreakoutGame extends BaseGame {
 			this.ball.x = this.paddleX + this.paddleWidth / 2;
 			if (input.consume('action')) {
 				this.launched = true;
+				host.sound('shoot');
 				host.announce('Packet launched. Clear the wall.');
 			}
 			return;
@@ -774,6 +789,7 @@ class BreakoutGame extends BaseGame {
 		if (this.ball.x <= 1.2 || this.ball.x >= COLS - 1.2) {
 			this.ball.x = clamp(this.ball.x, 1.2, COLS - 1.2);
 			this.ball.vx *= -1;
+			host.sound('wall');
 		}
 		if (this.ball.y <= 1.2) {
 			this.ball.y = 1.2;
@@ -788,6 +804,7 @@ class BreakoutGame extends BaseGame {
 		) {
 			this.ball.y = ROWS - 3.2;
 			this.ball.vy = -Math.abs(this.ball.vy) * 1.02;
+			host.sound('hit');
 			this.ball.vx += (this.ball.x - (this.paddleX + this.paddleWidth / 2)) * 1.1;
 		}
 
@@ -797,6 +814,7 @@ class BreakoutGame extends BaseGame {
 		if (hit) {
 			hit.alive = false;
 			this.score += 50;
+			host.sound('score');
 			this.ball.vy *= -1;
 			if (this.bricks.every((brick) => !brick.alive)) host.win('Every brick cleared. Buffer empty.');
 		}
@@ -941,6 +959,7 @@ class MissileCommandGame extends BaseGame {
 		this.crosshair.x = clamp(this.crosshair.x, 1, COLS - 2);
 		this.crosshair.y = clamp(this.crosshair.y, 2, ROWS - 5);
 		if (input.consume('action')) {
+			host.sound('shoot');
 			this.explosions.push({ x: this.crosshair.x, y: this.crosshair.y, radius: 0.2, growing: true });
 		}
 
@@ -968,6 +987,7 @@ class MissileCommandGame extends BaseGame {
 			};
 			if (this.explosions.some((explosion) => distance(position, explosion) <= explosion.radius)) {
 				this.score += 100;
+				host.sound('hit');
 				return false;
 			}
 			if (missile.progress >= 1) {
@@ -1096,6 +1116,7 @@ class AsteroidsGame extends BaseGame {
 			if (!hit) return true;
 			destroyed.add(hit);
 			this.score += hit.size === 2 ? 100 : 200;
+			host.sound('hit');
 			if (hit.size > 1) {
 				for (const direction of [-1, 1]) {
 					spawned.push({ x: hit.x, y: hit.y, vx: hit.vx + direction * 2.3, vy: hit.vy - direction * 1.7, size: 1 });
@@ -1181,6 +1202,7 @@ class GalagaGame extends BaseGame {
 		this.fireCooldown = Math.max(0, this.fireCooldown - delta);
 		this.invulnerable = Math.max(0, this.invulnerable - delta);
 		if (input.consume('action') && this.fireCooldown === 0) {
+			host.sound('shoot');
 			this.playerBullets.push({ x: this.playerX, y: ROWS - 3, vx: 0, vy: -16 });
 			this.fireCooldown = 0.16;
 		}
@@ -1212,6 +1234,7 @@ class GalagaGame extends BaseGame {
 			if (hit) {
 				hit.alive = false;
 				this.score += hit.dive === null ? 100 : 200;
+				host.sound('hit');
 				return false;
 			}
 			return bullet.y > 0;
@@ -1277,6 +1300,7 @@ class ArcadeEngine implements EngineHost {
 	private previousTime = 0;
 	private readonly renderer: AsciiRenderer;
 	private readonly input = new InputController();
+	private readonly soundboard = new ChipSound();
 
 	constructor(
 		private readonly slug: string,
@@ -1310,6 +1334,7 @@ class ArcadeEngine implements EngineHost {
 		this.elements.overlay.classList.add('is-hidden');
 		this.elements.state.textContent = 'PLAYING';
 		this.elements.canvas.focus({ preventScroll: true });
+		this.sound('start');
 		this.announce('Game live. Inputs accepted.');
 		this.emitState();
 	}
@@ -1320,6 +1345,7 @@ class ArcadeEngine implements EngineHost {
 		this.phase = 'playing';
 		this.previousTime = performance.now();
 		this.elements.overlay.classList.add('is-hidden');
+		this.sound('start');
 		this.announce('Fresh process started.');
 		this.updateHud();
 		this.emitState();
@@ -1328,6 +1354,7 @@ class ArcadeEngine implements EngineHost {
 	win(message: string) {
 		if (this.phase !== 'playing') return;
 		this.phase = 'won';
+		this.sound('win');
 		this.showOverlay('RUN COMPLETE', 'YOU WIN', message, '[ ENTER ] PLAY AGAIN');
 		this.emitState();
 	}
@@ -1335,12 +1362,17 @@ class ArcadeEngine implements EngineHost {
 	lose(message: string) {
 		if (this.phase !== 'playing') return;
 		this.phase = 'lost';
+		this.sound('lose');
 		this.showOverlay('PROCESS ENDED', 'GAME OVER', message, '[ ENTER ] RETRY');
 		this.emitState();
 	}
 
 	announce(message: string) {
 		this.elements.announcer.textContent = message;
+	}
+
+	sound(effect: SoundEffect) {
+		this.soundboard.play(effect);
 	}
 
 	press(control: Control) {
@@ -1436,6 +1468,7 @@ class ArcadeEngine implements EngineHost {
 	private togglePause() {
 		if (this.phase === 'playing') {
 			this.phase = 'paused';
+			this.sound('pause');
 			this.input.clear();
 			this.showOverlay('PROCESS PAUSED', 'PAUSED', 'The game state is safe. Continue when ready.', '[ ENTER ] CONTINUE');
 			this.emitState();

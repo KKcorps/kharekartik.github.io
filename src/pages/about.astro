@@ -399,7 +399,9 @@ const accentPalettes = [
 		</footer>
 	</div>
 
-	<script is:inline>
+	<script>
+		import { ChipSound } from '../scripts/chip-sound';
+
 		(() => {
 			const root = document.documentElement;
 			const themeValue = document.querySelector('[data-about-theme]');
@@ -516,6 +518,8 @@ const accentPalettes = [
 				return;
 			}
 
+			const dungeonSound = new ChipSound();
+
 			const rows = 14;
 			const columns = 36;
 			let grid = [];
@@ -583,6 +587,7 @@ const accentPalettes = [
 
 				setDungeonStatus('route the packet<br>through the chaos.');
 				renderDungeon();
+				dungeonSound.play('start');
 			};
 
 			const movePlayer = (deltaRow, deltaColumn) => {
@@ -597,6 +602,7 @@ const accentPalettes = [
 					grid[nextRow][nextColumn] === '#'
 				) {
 					setDungeonStatus('packet hit a wall.<br>reroute.');
+					dungeonSound.play('wall');
 					return;
 				}
 
@@ -607,11 +613,13 @@ const accentPalettes = [
 				if (player.row === goal.row && player.column === goal.column) {
 					renderDungeon();
 					setDungeonStatus(`packet delivered<br>in ${moves} hops.`);
+					dungeonSound.play('win');
 					return;
 				}
 
 				renderDungeon();
 				setDungeonStatus('route stable.<br>keep pushing.');
+				dungeonSound.play('move');
 			};
 
 			document.addEventListener('keydown', (event) => {
