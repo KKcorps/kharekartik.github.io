@@ -213,6 +213,55 @@ try {
 	await client.connect();
 	await client.call('Page.enable');
 	await client.call('Runtime.enable');
+	const audioTestScript = await client.call('Page.addScriptToEvaluateOnNewDocument', {
+		source: `(() => {
+			const audio = { contexts: 0, oscillators: 0 };
+			window.__audioTest = audio;
+			class FakeAudioParam {
+				setValueAtTime() {}
+				exponentialRampToValueAtTime() {}
+			}
+			class FakeAudioNode {
+				connect() {}
+			}
+			class FakeOscillatorNode extends FakeAudioNode {
+				constructor() {
+					super();
+					this.frequency = new FakeAudioParam();
+					this.type = 'sine';
+				}
+				start() {}
+				stop() {}
+			}
+			class FakeGainNode extends FakeAudioNode {
+				constructor() {
+					super();
+					this.gain = new FakeAudioParam();
+				}
+			}
+			class FakeAudioContext {
+				constructor() {
+					audio.contexts += 1;
+					this.currentTime = 0;
+					this.destination = new FakeAudioNode();
+					this.state = 'running';
+				}
+				createOscillator() {
+					audio.oscillators += 1;
+					return new FakeOscillatorNode();
+				}
+				createGain() {
+					return new FakeGainNode();
+				}
+				resume() {
+					this.state = 'running';
+					return Promise.resolve();
+				}
+			}
+			Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext });
+			Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: FakeAudioContext });
+		})();`,
+	});
 	await client.call('Emulation.setDeviceMetricsOverride', {
 		width: 390,
 		height: 844,
@@ -228,6 +277,28 @@ try {
 		const featuredHref = await client.evaluate(`document.querySelector('.ascii-bug-block').pathname`);
 		assert.equal(featuredHref, `/arcade/${slug}/`, `Homepage preview ${slug} must open its matching game screen.`);
 	}
+
+	await client.navigate(`http://127.0.0.1:${previewPort}/arcade/pac-man/`);
+	await client.evaluate(`document.getElementById('arcade-start').click()`);
+	assert.deepEqual(
+		await client.evaluate('window.__audioTest'),
+		{ contexts: 1, oscillators: 2 },
+		'The arcade must play its first start sound without rate-limiting it.',
+	);
+	await client.navigate(`http://127.0.0.1:${previewPort}/about/`);
+	assert.deepEqual(
+		await client.evaluate('window.__audioTest'),
+		{ contexts: 0, oscillators: 0 },
+		'The About dungeon must not initialize or play audio before user interaction.',
+	);
+	await client.evaluate(`document.getElementById('about-reset-button').click()`);
+	assert.deepEqual(
+		await client.evaluate('window.__audioTest'),
+		{ contexts: 1, oscillators: 2 },
+		'The About dungeon reset control must play its start sound after user interaction.',
+	);
+	await client.call('Page.removeScriptToEvaluateOnNewDocument', { identifier: audioTestScript.identifier });
+	process.stdout.write('✓ audio initialization and first playback\n');
 
 	for (const slug of slugs) {
 		await client.navigate(`http://127.0.0.1:${previewPort}/arcade/${slug}/`);

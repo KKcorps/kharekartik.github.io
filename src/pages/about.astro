@@ -422,7 +422,7 @@ const accentPalettes = [
 					const cell = 12;
 					const columns = Math.floor(width / cell);
 					const rows = Math.floor(height / cell);
-					const createKGlyph = (originColumn, originRow) => [
+					const createKGlyph = (originColumn: number, originRow: number) => [
 						...Array.from({ length: 8 }, (_, offset) => ({
 							column: originColumn,
 							row: originRow + offset,
@@ -448,9 +448,9 @@ const accentPalettes = [
 					let frame = 0;
 					let lastFrameTime = 0;
 
-					const getColor = (name, fallback) =>
+					const getColor = (name: string, fallback: string) =>
 						getComputedStyle(root).getPropertyValue(name).trim() || fallback;
-					const drawCell = (column, row, fill, size = 4, offset = 4) => {
+					const drawCell = (column: number, row: number, fill: string, size = 4, offset = 4) => {
 						context.fillStyle = fill;
 						context.fillRect(column * cell + offset, row * cell + offset, size, size);
 					};
@@ -522,12 +522,12 @@ const accentPalettes = [
 
 			const rows = 14;
 			const columns = 36;
-			let grid = [];
+			let grid: string[][] = [];
 			let player = { row: 1, column: 1 };
 			let goal = { row: rows - 2, column: columns - 2 };
 			let moves = 0;
 
-			const setDungeonStatus = (message) => {
+			const setDungeonStatus = (message: string) => {
 				dungeonStatus.innerHTML = message;
 			};
 
@@ -565,7 +565,7 @@ const accentPalettes = [
 				dungeonDisplay.innerHTML = output;
 			};
 
-			const resetDungeon = () => {
+			const resetDungeon = (withSound = true) => {
 				grid = makeGrid();
 				player = { row: 1, column: 1 };
 				goal = { row: rows - 2, column: columns - 2 };
@@ -587,10 +587,10 @@ const accentPalettes = [
 
 				setDungeonStatus('route the packet<br>through the chaos.');
 				renderDungeon();
-				dungeonSound.play('start');
+				if (withSound) dungeonSound.play('start');
 			};
 
-			const movePlayer = (deltaRow, deltaColumn) => {
+			const movePlayer = (deltaRow: number, deltaColumn: number) => {
 				const nextRow = player.row + deltaRow;
 				const nextColumn = player.column + deltaColumn;
 
@@ -655,12 +655,13 @@ const accentPalettes = [
 				}
 			});
 
-			[
+			const dungeonControls: Array<[string, () => void]> = [
 				['about-btn-up', () => movePlayer(-1, 0)],
 				['about-btn-down', () => movePlayer(1, 0)],
 				['about-btn-left', () => movePlayer(0, -1)],
 				['about-btn-right', () => movePlayer(0, 1)],
-			].forEach(([id, action]) => {
+			];
+			dungeonControls.forEach(([id, action]) => {
 				const button = document.getElementById(id);
 				if (!(button instanceof HTMLButtonElement)) {
 					return;
@@ -674,8 +675,8 @@ const accentPalettes = [
 				});
 			});
 
-			resetButton.addEventListener('click', resetDungeon);
-			resetDungeon();
+			resetButton.addEventListener('click', () => resetDungeon());
+			resetDungeon(false);
 		})();
 	</script>
 

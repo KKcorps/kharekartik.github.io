@@ -591,9 +591,10 @@ class TetrisGame extends BaseGame {
 			if (!this.collides(rotated, this.pieceX + kick, this.pieceY)) {
 				this.piece = rotated;
 				this.pieceX += kick;
-				return;
+				return true;
 			}
 		}
+		return false;
 	}
 
 	private lockPiece(host: EngineHost) {
@@ -628,8 +629,7 @@ class TetrisGame extends BaseGame {
 			else this.score += 1;
 		}
 		if (input.consume('action')) {
-			this.rotatePiece();
-			host.sound('move');
+			if (this.rotatePiece()) host.sound('move');
 		}
 		if (input.consume('secondary')) {
 			let dropped = 0;
@@ -1086,6 +1086,7 @@ class AsteroidsGame extends BaseGame {
 		this.invulnerable = Math.max(0, this.invulnerable - delta);
 		this.fireCooldown = Math.max(0, this.fireCooldown - delta);
 		if (input.consume('action') && this.fireCooldown === 0) {
+			host.sound('shoot');
 			this.bullets.push({
 				x: this.ship.x + Math.cos(this.ship.angle),
 				y: this.ship.y + Math.sin(this.ship.angle),

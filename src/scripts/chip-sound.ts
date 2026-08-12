@@ -34,9 +34,18 @@ export class ChipSound {
 				this.enabled = false;
 				return null;
 			}
-			this.context = new AudioContextClass();
+			try {
+				this.context = new AudioContextClass();
+			} catch {
+				this.enabled = false;
+				return null;
+			}
 		}
-		if (this.context.state === 'suspended') void this.context.resume();
+		if (this.context.state === 'closed') {
+			this.enabled = false;
+			return null;
+		}
+		if (this.context.state === 'suspended') void this.context.resume().catch(() => undefined);
 		return this.context;
 	}
 
@@ -44,8 +53,8 @@ export class ChipSound {
 		const context = this.getContext();
 		if (!context) return;
 		const now = context.currentTime;
-		const last = this.lastPlayed.get(effect) ?? 0;
-		if (now - last < 0.035) return;
+		const last = this.lastPlayed.get(effect);
+		if (last !== undefined && now - last < 0.035) return;
 		this.lastPlayed.set(effect, now);
 
 		SOUND_PATTERNS[effect].forEach(([frequency, offset, duration]) => {
