@@ -1,6 +1,7 @@
 ---
 title: "The Staff Engineer's Missing Manual"
 summary: "A friendly, agent-assisted field guide to the staff engineer transition, where the job becomes less about solving every problem yourself and more about turning ambiguity into durable motion."
+seoDescription: "A practical field guide to the staff engineer transition: turning ambiguity into durable progress without trying to solve every problem yourself."
 publishedOn: 2026-07-08
 draft: false
 tags:

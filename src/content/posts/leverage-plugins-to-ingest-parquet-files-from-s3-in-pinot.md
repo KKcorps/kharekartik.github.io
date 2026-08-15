@@ -1,6 +1,7 @@
 ---
 title: "Leverage Plugins to Ingest Parquet Files from S3 In pinot"
 summary: "One of the primary advantages of using Pinot is its pluggable architecture. The plugins make it easy to add support for any third-party system which can be an execution framework, a filesystem, or input format."
+seoDescription: "How Apache Pinot's plugin architecture lets ingestion jobs read Parquet data from Amazon S3 through pluggable filesystems and input formats."
 publishedOn: 2020-08-18
 tags:
   - distributed-systems

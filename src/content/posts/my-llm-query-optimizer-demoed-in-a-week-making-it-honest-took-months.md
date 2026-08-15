@@ -1,6 +1,7 @@
 ---
 title: "My LLM Query Optimizer Demoed in a Week. Making it honest however took Months"
 summary: "I built an LLM that recommends fixes for slow database queries in a week. This is the story of the months of evals, validators and cluster probes it took to make its advice honest."
+seoDescription: "Why a week-long LLM query optimizer demo needed months of evals, validators and live cluster probes before its advice became trustworthy."
 publishedOn: 2026-07-10
 draft: false
 tags:

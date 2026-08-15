@@ -1,6 +1,7 @@
 ---
 title: "How to Package Java Projects in Python Tar files"
 summary: "Before diving into this article, I should state that — as a developer — any situation requiring placing a language A project into a language B package should occur very rarely. Most of the time it’s preferable to consider re-designing the interaction between various language components in these situations. But what if this situation is unavoidable? Open source projects such as Apache Flink and Apache Spark serve as examples. These projects have been written completely in Java but also have python modules available for those who don’t want to use the Java API."
+seoDescription: "How to package a Java project inside a Python distribution when the two language ecosystems genuinely need to ship together."
 publishedOn: 2021-03-02
 tags:
   - java

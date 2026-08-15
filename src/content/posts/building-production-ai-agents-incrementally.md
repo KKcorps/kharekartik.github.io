@@ -1,6 +1,7 @@
 ---
 title: "Escaping the zero shot build trap"
 summary: "In-progress notes from building a JIRA-to-PR agent for Apache Pinot, the over engineering instinct I started with, the signals that told me when to add each layer and the things I'm still figuring out."
+seoDescription: "What I learned building a Jira-to-PR agent for Apache Pinot one proven layer at a time instead of designing the whole system upfront."
 publishedOn: 2026-04-16
 draft: false
 tags:

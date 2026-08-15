@@ -3,6 +3,7 @@ import { getCollection, render, type CollectionEntry } from 'astro:content';
 import SiteLayout from '../../layouts/SiteLayout.astro';
 import ThemeToggle from '../../components/ThemeToggle.astro';
 import { getPosts } from '../../lib/content';
+import { SITE, absoluteUrl } from '../../lib/site';
 
 export async function getStaticPaths() {
 	const posts = await getCollection('posts', ({ data }) => !data.draft);
@@ -28,13 +29,49 @@ const readTimeMinutes = Math.max(
 	Math.round((post.body ?? '').split(/\s+/).filter(Boolean).length / 220),
 );
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const articlePath = `/writing/${post.id}/`;
+const articleUrl = absoluteUrl(articlePath);
+const authorUrl = absoluteUrl(SITE.author.path);
 const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
+const updatedYyyyMmDd = post.data.updatedOn?.toISOString().slice(0, 10);
+const articleStructuredData = {
+	'@context': 'https://schema.org',
+	'@type': 'BlogPosting',
+	'@id': `${articleUrl}#article`,
+	headline: post.data.title,
+	description: post.data.seoDescription ?? post.data.summary,
+	datePublished: post.data.publishedOn.toISOString(),
+	dateModified: (post.data.updatedOn ?? post.data.publishedOn).toISOString(),
+	mainEntityOfPage: articleUrl,
+	author: {
+		'@type': 'Person',
+		'@id': `${authorUrl}#person`,
+		name: SITE.author.name,
+		url: authorUrl,
+	},
+	isPartOf: {
+		'@type': 'WebSite',
+		'@id': `${SITE.origin}/#website`,
+		name: SITE.name,
+		url: `${SITE.origin}/`,
+	},
+	...(post.data.socialImage ? { image: absoluteUrl(post.data.socialImage) } : {}),
+};
 ---
 
-<SiteLayout title={post.data.title} description={post.data.summary} hideChrome bodyClass="article-page">
+<SiteLayout
+	title={post.data.seoTitle ?? post.data.title}
+	description={post.data.seoDescription ?? post.data.summary}
+	canonicalPath={articlePath}
+	socialImage={post.data.socialImage}
+	pageType="article"
+	publishedOn={post.data.publishedOn}
+	updatedOn={post.data.updatedOn ?? post.data.publishedOn}
+	structuredData={articleStructuredData}
+	hideChrome
+	bodyClass="article-page"
+>
 	<script>
-		import mermaid from 'mermaid';
-
 		const getThemeVariables = () => {
 			const styles = getComputedStyle(document.documentElement);
 			const accent = styles.getPropertyValue('--accent').trim() || '#39ff14';
@@ -172,6 +209,8 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 			if (figures.length === 0) {
 				return;
 			}
+
+			const { default: mermaid } = await import('mermaid');
 
 			mermaid.initialize({
 				startOnLoad: false,
@@ -315,7 +354,15 @@ const yyyyMmDd = post.data.publishedOn.toISOString().slice(0, 10);
 		<header class="article-header">
 			<h1 class="article-title">{post.data.title}</h1>
 			<div class="article-meta">
-				<span>{yyyyMmDd}</span>
+				<span>By <a href={withBase(SITE.author.path)} rel="author">{SITE.author.name}</a></span>
+				<span class="sep">/</span>
+				<time datetime={yyyyMmDd}>{yyyyMmDd}</time>
+				{updatedYyyyMmDd && (
+					<>
+						<span class="sep">/</span>
+						<span>Updated <time datetime={updatedYyyyMmDd}>{updatedYyyyMmDd}</time></span>
+					</>
+				)}
 				<span class="sep">/</span>
 				<span>{readTimeMinutes} min read</span>
 				{post.data.tags.map((tag) => (

@@ -1,8 +1,28 @@
 ---
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { SITE, absoluteUrl } from '../lib/site';
 
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 const year = new Date().getFullYear();
+const aboutDescription =
+	'Kartik Khare is a distributed systems engineer writing about Apache Pinot, RocksDB, data infrastructure and AI agents.';
+const aboutUrl = absoluteUrl(SITE.author.path);
+const profileStructuredData = {
+	'@context': 'https://schema.org',
+	'@type': 'ProfilePage',
+	'@id': `${aboutUrl}#profile`,
+	url: aboutUrl,
+	name: `About ${SITE.author.name}`,
+	description: aboutDescription,
+	mainEntity: {
+		'@type': 'Person',
+		'@id': `${aboutUrl}#person`,
+		name: SITE.author.name,
+		url: aboutUrl,
+		jobTitle: 'Distributed systems engineer',
+		sameAs: SITE.author.sameAs,
+	},
+};
 const accentPalettes = [
 	{
 		dark: { hex: '#00e5ff', glow: 'rgba(0,229,255,0.25)', dim: 'rgba(0,229,255,0.12)' },
@@ -93,7 +113,9 @@ const accentPalettes = [
 
 <SiteLayout
 	title="About"
-	description="About Kartik, plus a tiny playable ASCII game."
+	description={aboutDescription}
+	pageType="profile"
+	structuredData={profileStructuredData}
 	hideChrome
 	bodyClass="about-terminal"
 >
@@ -197,7 +219,7 @@ const accentPalettes = [
 				</div>
 
 				<div class="about-bio-block">
-					<p>I'm Kartik.</p>
+					<h1>I'm Kartik.</h1>
 				</div>
 
 				<div class="about-bio-block">
@@ -929,10 +951,12 @@ const accentPalettes = [
 			margin-bottom: 22px;
 		}
 
-		.about-bio-block p {
+		.about-bio-block p,
+		.about-bio-block h1 {
 			margin: 0;
 			color: var(--about-text);
 			font-size: 13px;
+			font-weight: 400;
 			line-height: 1.75;
 		}
 

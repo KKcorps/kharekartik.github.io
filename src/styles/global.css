@@ -1881,6 +1881,14 @@ body.article-page .site-main {
 	color: var(--article-muted-strong);
 }
 
+.article-page .article-meta a {
+	color: inherit;
+}
+
+.article-page .article-meta a:hover {
+	color: var(--accent);
+}
+
 .article-page .article-meta .tag::before {
 	content: '# ';
 	color: var(--article-muted-strong);

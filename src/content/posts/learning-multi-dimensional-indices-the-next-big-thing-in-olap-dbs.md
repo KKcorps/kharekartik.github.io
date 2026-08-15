@@ -1,6 +1,7 @@
 ---
 title: "Learning Multi-dimensional indices: The next big thing in OLAP DBs"
 summary: "Flood"
+seoDescription: "How multi-dimensional indexes accelerate OLAP queries by organizing data around the dimensions filters actually use."
 publishedOn: 2020-04-09
 tags:
   - big-data

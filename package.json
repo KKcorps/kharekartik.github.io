@@ -7,14 +7,17 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/check-seo.mjs",
     "preview": "astro preview",
     "check": "astro check",
+    "check:seo": "npm run build",
     "test:arcade": "npm run build && node scripts/verify-ascii-arcade.mjs",
     "astro": "astro",
     "import:medium": "node scripts/import-medium.mjs"
   },
   "dependencies": {
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.3",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fontsource/press-start-2p": "^5.2.7",
@@ -26,6 +29,7 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
     "@types/node": "^25.5.0",
+    "parse5": "^8.0.1",
     "turndown": "^7.2.2",
     "typescript": "^5.9.3"
   }

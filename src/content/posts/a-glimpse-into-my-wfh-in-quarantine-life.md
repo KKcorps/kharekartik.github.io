@@ -1,6 +1,7 @@
 ---
 title: "A Glimpse into my “WFH in Quarantine” Life"
 summary: "The Lab"
+seoDescription: "A practical tour of the tools, routines and home-office setup that shaped my work-from-home life during quarantine."
 publishedOn: 2020-04-01
 tags:
   - work-life-balance

@@ -1,20 +1,55 @@
 ---
 import ThemeToggle from '../components/ThemeToggle.astro';
+import { SITE, absoluteUrl } from '../lib/site';
 import '../styles/global.css';
+
+type StructuredData = Record<string, unknown>;
 
 interface Props {
 	title?: string;
 	description?: string;
+	canonicalPath?: string;
+	socialImage?: string;
+	pageType?: 'website' | 'article' | 'profile';
+	publishedOn?: Date;
+	updatedOn?: Date;
+	noindex?: boolean;
+	structuredData?: StructuredData | StructuredData[];
 	hideChrome?: boolean;
 	bodyClass?: string;
 }
 
-const siteName = 'Kartik Khare';
-const defaultDescription =
-	'Writeups about side projects, ongoing experiments, and the systems details worth keeping.';
-const { title, description = defaultDescription, hideChrome = false, bodyClass = '' } = Astro.props;
-const pageTitle = title ? `${title} | ${siteName}` : `${siteName} | Build notes and project writeups`;
+const {
+	title,
+	description = SITE.defaultDescription,
+	canonicalPath,
+	socialImage = SITE.defaultSocialImage,
+	pageType = 'website',
+	publishedOn,
+	updatedOn,
+	noindex = false,
+	structuredData,
+	hideChrome = false,
+	bodyClass = '',
+} = Astro.props;
+const pageTitle = title
+	? title.includes(SITE.name)
+		? title
+		: `${title} | ${SITE.name}`
+	: SITE.defaultTitle;
 const pathname = Astro.url.pathname;
+const siteOrigin = Astro.site?.href ?? SITE.origin;
+const canonicalUrl = absoluteUrl(canonicalPath ?? pathname, siteOrigin);
+const socialImageUrl = absoluteUrl(socialImage, siteOrigin);
+const rssUrl = absoluteUrl('/rss.xml', siteOrigin);
+const sitemapUrl = absoluteUrl('/sitemap-index.xml', siteOrigin);
+const jsonLdItems = structuredData
+	? Array.isArray(structuredData)
+		? structuredData
+		: [structuredData]
+	: [];
+const serializeJsonLd = (value: StructuredData) =>
+	JSON.stringify(value).replace(/</g, '\\u003c');
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 
 const navItems = [
@@ -34,9 +69,33 @@ const year = new Date().getFullYear();
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="generator" content={Astro.generator} />
 		<meta name="description" content={description} />
+		{noindex && <meta name="robots" content="noindex,follow" />}
+		<link rel="canonical" href={canonicalUrl} />
+		<link rel="alternate" type="application/rss+xml" title={`${SITE.name} writing feed`} href={rssUrl} />
+		<link rel="sitemap" href={sitemapUrl} />
+		<meta property="og:title" content={pageTitle} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonicalUrl} />
+		<meta property="og:type" content={pageType} />
+		<meta property="og:site_name" content={SITE.name} />
+		<meta property="og:image" content={socialImageUrl} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={`${SITE.name} — engineering notes`} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={pageTitle} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={socialImageUrl} />
+		{pageType === 'article' && publishedOn && (
+			<meta property="article:published_time" content={publishedOn.toISOString()} />
+		)}
+		{pageType === 'article' && updatedOn && (
+			<meta property="article:modified_time" content={updatedOn.toISOString()} />
+		)}
 		<link rel="icon" type="image/svg+xml" sizes="any" href={`${import.meta.env.BASE_URL}favicon.svg`} />
 		<link rel="icon" type="image/x-icon" href={`${import.meta.env.BASE_URL}favicon.ico`} />
 		<title>{pageTitle}</title>
+		{jsonLdItems.map((item) => <script is:inline type="application/ld+json" set:html={serializeJsonLd(item)} />)}
 		<script is:inline>
 			(() => {
 				const storageKey = 'theme-preference';
@@ -95,7 +154,7 @@ const year = new Date().getFullYear();
 
 					<header class="site-header">
 						<a class="site-header__brand" href={import.meta.env.BASE_URL}>
-							<span class="site-header__brand-title">{siteName}</span>
+							<span class="site-header__brand-title">{SITE.name}</span>
 							<span class="site-header__brand-note">build notes / project logs</span>
 						</a>
 

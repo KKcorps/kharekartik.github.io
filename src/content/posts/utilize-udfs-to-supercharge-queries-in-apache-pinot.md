@@ -1,6 +1,7 @@
 ---
 title: "Utilize UDFs to Supercharge Queries in Apache Pinot"
 summary: "Groovy Functions"
+seoDescription: "How Apache Pinot's Groovy UDF support extends SQL queries with custom functions and the tradeoffs that come with it."
 publishedOn: 2020-09-29
 tags:
   - analytics

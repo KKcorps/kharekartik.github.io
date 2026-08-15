@@ -1,6 +1,7 @@
 ---
 title: "How Does Zookeeper Servers Remain In sync?"
 summary: "Leader and Followers"
+seoDescription: "How ZooKeeper keeps leader and follower servers synchronized through atomic broadcast, transaction logs and snapshots."
 publishedOn: 2020-03-30
 tags:
   - distributed-systems

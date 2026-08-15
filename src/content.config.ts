@@ -7,6 +7,9 @@ const posts = defineCollection({
 	schema: z.object({
 		title: z.string(),
 		summary: z.string(),
+		seoTitle: z.string().min(1).optional(),
+		seoDescription: z.string().min(1).optional(),
+		socialImage: z.string().min(1).optional(),
 		publishedOn: z.coerce.date(),
 		updatedOn: z.coerce.date().optional(),
 		tags: z.array(z.string()).default([]),
