@@ -2080,6 +2080,31 @@ html[data-theme='light'] .article-page .prose .wbw-explainer {
 	--wbw-green: #338b56;
 }
 
+/* The QA wrong-data diagrams use the Staff Manual's paper-and-pencil palette. */
+.article-page .prose .wbw-explainer.qa-wrong-data {
+	--wbw-paper: #20231f;
+	--wbw-card: #282c26;
+	--wbw-ink: #e9e4d2;
+	--wbw-pencil: #9c967e;
+	--wbw-red: #e68b80;
+	--wbw-green: #7cc494;
+	--wbw-highlight: rgba(255, 214, 90, 0.3);
+	--wbw-highlight-ink: #f3d36b;
+	--wbw-rule: #3b4038;
+}
+
+html[data-theme='light'] .article-page .prose .wbw-explainer.qa-wrong-data {
+	--wbw-paper: #fffef8;
+	--wbw-card: #fffbee;
+	--wbw-ink: #2a261d;
+	--wbw-pencil: #8d8471;
+	--wbw-red: #d25050;
+	--wbw-green: #3f9b63;
+	--wbw-highlight: #ffe477;
+	--wbw-highlight-ink: #8a6d1a;
+	--wbw-rule: #e7e0ca;
+}
+
 .article-page .prose .wbw-explainer svg {
 	display: block;
 	width: 100%;

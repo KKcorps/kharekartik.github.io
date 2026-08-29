@@ -27,9 +27,87 @@ To see the bug you need three words, all simpler than they sound. A table's data
 
 Now run the new feature through that old pruner. The row counts it reads were written when the segments were built, so they still say what they said before the mask existed. The mask is applied later, on the servers, after the pruner has already chosen. So the pruner counts masked rows as available rows. It keeps too small a set of segments. The servers then apply the mask honestly inside that set. The answer comes back short. Rows that should be in it are sitting in segments the pruner threw away.
 
-![The pruner trusts a stale label while the mask deletes rows behind its back](/images/my-qa-agent-wrote-the-right-test-on-the-wrong-data/wbw-pruner-trusts-the-label.svg)
-
-*The pruner, doing correct arithmetic on a number that stopped being true.*
+<figure class="wbw-explainer qa-wrong-data" role="img" aria-label="The pruner trusts a stale label while the mask deletes rows behind its back">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 470" font-family="'Chalkboard SE','Comic Sans MS','Segoe Print',cursive">
+  <!-- card -->
+  <rect x="4" y="4" width="772" height="462" rx="14" fill="var(--wbw-paper)" stroke="var(--wbw-rule)" stroke-width="2"/>
+  <!-- speech bubble -->
+  <path d="M38,52 q-8,-26 24,-30 q90,-10 180,-2 q34,3 30,30 q4,44 -6,62 q-4,20 -32,20 q-80,8 -164,0 q-30,-2 -30,-26 q-8,-30 -2,-54 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M120,132 q-4,22 -18,34 q26,-8 40,-30" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+  <text x="58" y="62" font-size="17" fill="var(--wbw-ink)" transform="rotate(-0.6 58 62)">Need 50 rows.</text>
+  <text x="58" y="86" font-size="17" fill="var(--wbw-ink)" transform="rotate(0.4 58 86)">This box says 55.</text>
+  <text x="58" y="110" font-size="17" fill="var(--wbw-ink)" transform="rotate(-0.5 58 110)">One box is plenty!</text>
+  <!-- pruner stick figure -->
+  <circle cx="120" cy="212" r="17" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6"/>
+  <circle cx="114" cy="209" r="1.8" fill="var(--wbw-ink)"/>
+  <circle cx="126" cy="209" r="1.8" fill="var(--wbw-ink)"/>
+  <path d="M113,220 q7,5 14,0" fill="none" stroke="var(--wbw-ink)" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M120,229 q-2,38 0,62" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M120,246 q-20,10 -30,26" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M120,244 q24,4 40,-6" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M120,291 q-12,26 -20,40" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M120,291 q12,26 18,40" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- clipboard -->
+  <rect x="156" y="222" width="30" height="40" rx="3" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.4" transform="rotate(8 171 242)"/>
+  <path d="M162,236 l18,2 M161,245 l18,2 M160,254 l14,2" stroke="var(--wbw-ink)" stroke-width="1.6" stroke-linecap="round"/>
+  <text x="78" y="360" font-size="16" fill="var(--wbw-ink)" transform="rotate(-1 78 360)">THE PRUNER</text>
+  <text x="60" y="381" font-size="12.5" fill="var(--wbw-pencil)">(only ever reads the label)</text>
+  <!-- segment box -->
+  <path d="M300,168 q80,-5 168,0 q6,90 0,182 q-88,6 -168,0 q-6,-92 0,-182 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="3" stroke-linejoin="round"/>
+  <!-- sticky label -->
+  <rect x="306" y="138" width="160" height="50" rx="4" fill="var(--wbw-highlight)" stroke="var(--wbw-ink)" stroke-width="2.2" transform="rotate(-2 386 163)"/>
+  <text x="322" y="160" font-size="17" fill="var(--wbw-ink)" transform="rotate(-2 322 160)">55 ROWS</text>
+  <text x="322" y="180" font-size="11.5" fill="var(--wbw-highlight-ink)" transform="rotate(-2 322 180)">(printed at build time)</text>
+  <!-- rows inside: 11 rows, 6 struck -->
+  <g stroke="var(--wbw-ink)" stroke-width="2" stroke-linecap="round">
+    <path d="M318,196 q66,2 132,0"/>
+    <path d="M318,210 q66,-2 132,0"/>
+    <path d="M318,224 q66,2 132,0"/>
+    <path d="M318,238 q66,-2 132,0"/>
+    <path d="M318,252 q66,2 132,0"/>
+    <path d="M318,266 q66,-2 132,0"/>
+    <path d="M318,280 q66,2 132,0"/>
+    <path d="M318,294 q66,-2 132,0"/>
+    <path d="M318,308 q66,2 132,0"/>
+    <path d="M318,322 q66,-2 132,0"/>
+    <path d="M318,336 q66,2 132,0"/>
+  </g>
+  <g stroke="var(--wbw-red)" stroke-width="2.6" stroke-linecap="round">
+    <path d="M312,262 q70,6 144,2"/>
+    <path d="M312,276 q70,4 144,2"/>
+    <path d="M312,290 q70,6 144,2"/>
+    <path d="M312,304 q70,4 144,2"/>
+    <path d="M312,318 q70,6 144,2"/>
+    <path d="M312,332 q70,4 144,2"/>
+  </g>
+  <!-- mask note -->
+  <path d="M352,398 q4,-24 6,-40" fill="none" stroke="var(--wbw-red)" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M358,358 l-8,10 M358,358 l4,12" stroke="var(--wbw-red)" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+  <text x="252" y="420" font-size="14" fill="var(--wbw-red)" transform="rotate(-1 252 420)">deleted by the mask</text>
+  <text x="252" y="440" font-size="12.5" fill="var(--wbw-red)">(invisible from out here)</text>
+  <!-- arrow to answer -->
+  <path d="M478,220 q60,-12 118,-4" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M596,216 l-14,-7 M596,216 l-12,10" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- answer box -->
+  <path d="M606,182 q62,-4 128,0 q5,32 0,64 q-66,5 -128,0 q-5,-32 0,-64 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.8" stroke-linejoin="round"/>
+  <text x="626" y="212" font-size="16" fill="var(--wbw-ink)">THE ANSWER</text>
+  <text x="640" y="236" font-size="17" fill="var(--wbw-red)" transform="rotate(-1 640 236)">25 rows</text>
+  <!-- user stick figure -->
+  <circle cx="672" cy="308" r="15" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6"/>
+  <circle cx="666" cy="305" r="1.7" fill="var(--wbw-ink)"/>
+  <circle cx="678" cy="305" r="1.7" fill="var(--wbw-ink)"/>
+  <path d="M666,316 q6,-4 12,0" fill="none" stroke="var(--wbw-ink)" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M672,323 q-2,32 0,52" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M672,338 q-16,8 -24,20 M672,338 q16,8 24,20" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M672,375 q-10,22 -16,34 M672,375 q10,22 16,34" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="548" y="330" font-size="15" fill="var(--wbw-ink)" transform="rotate(-1 548 330)">...I asked</text>
+  <text x="548" y="350" font-size="15" fill="var(--wbw-ink)" transform="rotate(-1 548 350)">for 50.</text>
+</svg>
+<figcaption>The pruner, doing correct arithmetic on a number that stopped being true.</figcaption>
+</figure>
 
 Nothing threw. Every line of the new feature behaved correctly. A component nobody touched, a few layers down, started producing wrong answers.
 
@@ -70,9 +148,78 @@ Run the pruner's arithmetic on that yourself. The query wants 50 rows. The prune
 
 The bug needs the opposite data. Many small segments whose live counts sit near the LIMIT, so the segments the pruner keeps do not hold 50 real rows between them. My test data was a few fat segments with shallow masks. Right query, wrong data.
 
-![One fat segment with a shallow mask passes while many small heavily masked segments starve the answer](/images/my-qa-agent-wrote-the-right-test-on-the-wrong-data/wbw-two-shapes-of-data.svg)
-
-*My tests got the left. The bug needs the right.*
+<figure class="wbw-explainer qa-wrong-data" role="img" aria-label="One fat segment with a shallow mask passes while many small heavily masked segments starve the answer">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 470" font-family="'Chalkboard SE','Comic Sans MS','Segoe Print',cursive">
+  <rect x="4" y="4" width="812" height="462" rx="14" fill="var(--wbw-paper)" stroke="var(--wbw-rule)" stroke-width="2"/>
+  <!-- divider -->
+  <path d="M410,28 q-6,110 4,210 q-6,100 -2,196" fill="none" stroke="var(--wbw-pencil)" stroke-width="2" stroke-dasharray="7 9"/>
+  <!-- LEFT: the data my tests got -->
+  <text x="60" y="52" font-size="18" fill="var(--wbw-ink)" transform="rotate(-0.8 60 52)">THE DATA MY TESTS GOT</text>
+  <path d="M56,84 q140,-6 292,0 q7,105 0,214 q-152,7 -292,0 q-7,-109 0,-214 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="70" y="66" width="130" height="32" rx="4" fill="var(--wbw-highlight)" stroke="var(--wbw-ink)" stroke-width="2" transform="rotate(-2 135 82)"/>
+  <text x="82" y="88" font-size="15.5" fill="var(--wbw-ink)" transform="rotate(-2 82 88)">1,000 ROWS</text>
+  <!-- lots of live rows -->
+  <g stroke="var(--wbw-ink)" stroke-width="1.9" stroke-linecap="round">
+    <path d="M76,120 q116,3 252,0"/><path d="M76,136 q116,-3 252,0"/>
+    <path d="M76,152 q116,3 252,0"/><path d="M76,168 q116,-3 252,0"/>
+    <path d="M76,184 q116,3 252,0"/><path d="M76,200 q116,-3 252,0"/>
+    <path d="M76,216 q116,3 252,0"/><path d="M76,232 q116,-3 252,0"/>
+    <path d="M76,248 q116,3 252,0"/>
+  </g>
+  <!-- one struck stripe -->
+  <path d="M76,268 q120,4 252,0" stroke="var(--wbw-ink)" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+  <path d="M70,268 q124,7 264,2" stroke="var(--wbw-red)" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+  <text x="120" y="292" font-size="13" fill="var(--wbw-red)">100 masked. barely a dent.</text>
+  <text x="66" y="342" font-size="15" fill="var(--wbw-ink)">900 still alive.</text>
+  <text x="66" y="364" font-size="15" fill="var(--wbw-ink)">A LIMIT of 50 never notices.</text>
+  <path d="M62,398 l14,16 l26,-30" fill="none" stroke="var(--wbw-green)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="116" y="416" font-size="16" fill="var(--wbw-green)" transform="rotate(-1 116 416)">test passes. honestly!</text>
+  <!-- RIGHT: the data the bug needs -->
+  <text x="452" y="52" font-size="18" fill="var(--wbw-ink)" transform="rotate(0.6 452 52)">THE DATA THE BUG NEEDS</text>
+  <!-- three small boxes, mostly struck -->
+  <g>
+    <path d="M446,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="var(--wbw-ink)" stroke-width="1.8" stroke-linecap="round">
+      <path d="M458,104 q34,2 72,0"/><path d="M458,118 q34,-2 72,0"/><path d="M458,132 q34,2 72,0"/><path d="M458,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="var(--wbw-red)" stroke-width="2.4" stroke-linecap="round">
+      <path d="M452,116 q40,5 84,2"/><path d="M452,130 q40,4 84,2"/><path d="M452,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <g>
+    <path d="M566,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="var(--wbw-ink)" stroke-width="1.8" stroke-linecap="round">
+      <path d="M578,104 q34,2 72,0"/><path d="M578,118 q34,-2 72,0"/><path d="M578,132 q34,2 72,0"/><path d="M578,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="var(--wbw-red)" stroke-width="2.4" stroke-linecap="round">
+      <path d="M572,116 q40,5 84,2"/><path d="M572,130 q40,4 84,2"/><path d="M572,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <g>
+    <path d="M686,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="var(--wbw-ink)" stroke-width="1.8" stroke-linecap="round">
+      <path d="M698,104 q34,2 72,0"/><path d="M698,118 q34,-2 72,0"/><path d="M698,132 q34,2 72,0"/><path d="M698,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="var(--wbw-red)" stroke-width="2.4" stroke-linecap="round">
+      <path d="M692,116 q40,5 84,2"/><path d="M692,130 q40,4 84,2"/><path d="M692,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <text x="452" y="192" font-size="14" fill="var(--wbw-ink)">each label says 55.</text>
+  <text x="452" y="212" font-size="14" fill="var(--wbw-red)">each really holds ~25.</text>
+  <!-- pruner math -->
+  <path d="M452,238 q160,-6 330,0 q6,34 0,70 q-170,6 -330,0 q-6,-36 0,-70 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.4" stroke-linejoin="round"/>
+  <text x="470" y="266" font-size="14.5" fill="var(--wbw-ink)">pruner math: "55 &#8805; 50,</text>
+  <text x="470" y="288" font-size="14.5" fill="var(--wbw-ink)">keep one box, done"</text>
+  <path d="M610,318 q4,20 0,34" fill="none" stroke="var(--wbw-ink)" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M610,352 l-8,-11 M610,352 l9,-10" fill="none" stroke="var(--wbw-ink)" stroke-width="2.4" stroke-linecap="round"/>
+  <text x="500" y="388" font-size="17" fill="var(--wbw-red)" transform="rotate(-1 500 388)">25 rows come back.</text>
+  <text x="452" y="428" font-size="14.5" fill="var(--wbw-pencil)">same code. same query. this shape</text>
+  <text x="452" y="448" font-size="14.5" fill="var(--wbw-pencil)">was written down nowhere.</text>
+</svg>
+<figcaption>My tests got the left. The bug needs the right.</figcaption>
+</figure>
 
 The plan said which query to run and what to compare, nothing more. The shape of data the test needed, the one claim that decided whether it could ever fail, was written down nowhere. So the mismatch was invisible to every reader of the plan, including the one who approved it.
 
@@ -117,9 +264,71 @@ Behind each verdict sit file and line citations, traced through the source. The 
 
 The framing question contains the whole miss. It only ever asks whether the new code reaches every path. Nobody asks the dual. Which old code consumes the row counts the mask just made stale? Ask that and the pruner is one grep away, an existing consumer of per segment row counts sitting directly upstream of every LIMIT. Across four runs of analysis, the component that caused the bug is mentioned zero times.
 
-![The model shines a flashlight on everything the diff touches while the pruner sits in the dark](/images/my-qa-agent-wrote-the-right-test-on-the-wrong-data/wbw-flashlight.svg)
-
-*The flashlight is real work. So is the dark.*
+<figure class="wbw-explainer qa-wrong-data" role="img" aria-label="The model shines a flashlight on everything the diff touches while the pruner sits in the dark">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 440" font-family="'Chalkboard SE','Comic Sans MS','Segoe Print',cursive">
+  <rect x="4" y="4" width="812" height="432" rx="14" fill="var(--wbw-paper)" stroke="var(--wbw-rule)" stroke-width="2"/>
+  <!-- the dark region (left) -->
+  <path d="M22,24 q120,-8 218,6 q14,90 8,190 q6,110 -6,196 q-110,10 -220,0 q-8,-100 -2,-196 q-6,-100 2,-196 Z"
+        fill="var(--wbw-card)" stroke="var(--wbw-pencil)" stroke-width="2" stroke-linejoin="round"/>
+  <text x="46" y="58" font-size="15" fill="var(--wbw-pencil)" transform="rotate(-1 46 58)">NOT IN THE DIFF</text>
+  <text x="46" y="80" font-size="12.5" fill="var(--wbw-pencil)">(no light reaches here)</text>
+  <!-- pruner box in the dark -->
+  <path d="M52,150 q66,-5 138,0 q6,52 0,104 q-72,6 -138,0 q-6,-52 0,-104 Z"
+        fill="var(--wbw-rule)" stroke="var(--wbw-pencil)" stroke-width="2.6" stroke-linejoin="round"/>
+  <circle cx="102" cy="188" r="3.4" fill="var(--wbw-card)"/>
+  <circle cx="134" cy="188" r="3.4" fill="var(--wbw-card)"/>
+  <path d="M100,212 q18,6 36,0" fill="none" stroke="var(--wbw-ink)" stroke-width="2.4" stroke-linecap="round"/>
+  <text x="64" y="286" font-size="15" fill="var(--wbw-pencil)" transform="rotate(-1 64 286)">THE PRUNER</text>
+  <text x="46" y="308" font-size="12.5" fill="var(--wbw-pencil)">still trusting the row counts,</text>
+  <text x="46" y="326" font-size="12.5" fill="var(--wbw-pencil)">which just stopped being true</text>
+  <!-- the model stick figure -->
+  <circle cx="320" cy="176" r="17" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6"/>
+  <circle cx="326" cy="172" r="1.8" fill="var(--wbw-ink)"/>
+  <circle cx="315" cy="172" r="1.8" fill="var(--wbw-ink)"/>
+  <path d="M315,184 q6,4 13,1" fill="none" stroke="var(--wbw-ink)" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M320,193 q-2,40 0,64" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M320,210 q-18,12 -26,26" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M320,208 q26,-4 44,-10" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M320,257 q-12,26 -18,40" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M320,257 q12,26 18,40" fill="none" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="272" y="330" font-size="15" fill="var(--wbw-ink)" transform="rotate(-1 272 330)">THE MODEL</text>
+  <text x="252" y="352" font-size="12.5" fill="var(--wbw-pencil)">(auditing very hard, one way)</text>
+  <!-- flashlight -->
+  <rect x="362" y="188" width="30" height="14" rx="4" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.4" transform="rotate(-3 377 195)"/>
+  <!-- floodlit region -->
+  <path d="M436,34 q180,-14 348,8 q16,178 0,368 q-168,16 -348,4 q-14,-188 0,-380 Z" fill="var(--wbw-highlight)" opacity="0.7" stroke="var(--wbw-highlight-ink)" stroke-width="2"/>
+  <g stroke="var(--wbw-highlight-ink)" stroke-width="2.4" stroke-linecap="round">
+    <path d="M398,182 q22,-16 40,-26"/>
+    <path d="M402,192 q24,-4 44,-6"/>
+    <path d="M402,202 q24,6 44,12"/>
+    <path d="M398,210 q22,18 38,30"/>
+  </g>
+  <text x="642" y="60" font-size="13.5" fill="var(--wbw-highlight-ink)" transform="rotate(-0.6 642 60)">IN THE DIFF (floodlit)</text>
+  <!-- boxes in the light -->
+  <g>
+    <path d="M470,96 q76,-5 150,0 q5,24 0,48 q-74,5 -150,0 q-5,-24 0,-48 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+    <text x="486" y="126" font-size="14.5" fill="var(--wbw-ink)">the new mask code</text>
+    <path d="M636,112 l8,10 l16,-18" fill="none" stroke="var(--wbw-green)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g>
+    <path d="M486,168 q76,-4 150,0 q5,24 0,48 q-74,4 -150,0 q-5,-24 0,-48 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+    <text x="510" y="198" font-size="14.5" fill="var(--wbw-ink)">path 1: hooked</text>
+    <path d="M652,184 l8,10 l16,-18" fill="none" stroke="var(--wbw-green)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g>
+    <path d="M498,240 q76,-4 150,0 q5,24 0,48 q-74,4 -150,0 q-5,-24 0,-48 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+    <text x="522" y="270" font-size="14.5" fill="var(--wbw-ink)">path 2: hooked</text>
+    <path d="M664,256 l8,10 l16,-18" fill="none" stroke="var(--wbw-green)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g>
+    <path d="M506,312 q80,-4 158,0 q5,24 0,48 q-78,4 -158,0 q-5,-24 0,-48 Z" fill="var(--wbw-card)" stroke="var(--wbw-ink)" stroke-width="2.6" stroke-linejoin="round"/>
+    <text x="520" y="336" font-size="13.5" fill="var(--wbw-ink)">join path: found a real</text>
+    <text x="520" y="354" font-size="13.5" fill="var(--wbw-ink)">gap! (good work, honestly)</text>
+  </g>
+  <text x="470" y="408" font-size="14" fill="var(--wbw-pencil)" transform="rotate(-0.5 470 408)">every box in the light got line level scrutiny</text>
+</svg>
+<figcaption>The flashlight is real work. So is the dark.</figcaption>
+</figure>
 
 The model audited everything the diff touches and nothing the diff makes stale. That is not a bug in my prompts. It is the default direction of a model's attention. The diff is visible, so the diff gets audited. The old code that consumes what the diff changed is invisible, so it gets nothing.
 
