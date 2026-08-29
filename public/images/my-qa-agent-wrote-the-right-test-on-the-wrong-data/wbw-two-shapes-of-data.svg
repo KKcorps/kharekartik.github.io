@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 470" font-family="'Chalkboard SE','Comic Sans MS','Segoe Print',cursive">
+  <rect x="4" y="4" width="812" height="462" rx="14" fill="#ffffff" stroke="#cccccc" stroke-width="2"/>
+
+  <!-- divider -->
+  <path d="M410,28 q-6,110 4,210 q-6,100 -2,196" fill="none" stroke="#bbbbbb" stroke-width="2" stroke-dasharray="7 9"/>
+
+  <!-- LEFT: the data my tests got -->
+  <text x="60" y="52" font-size="18" fill="#222222" transform="rotate(-0.8 60 52)">THE DATA MY TESTS GOT</text>
+
+  <path d="M56,84 q140,-6 292,0 q7,105 0,214 q-152,7 -292,0 q-7,-109 0,-214 Z"
+        fill="#ffffff" stroke="#222222" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="70" y="66" width="130" height="32" rx="4" fill="#fff3bf" stroke="#222222" stroke-width="2" transform="rotate(-2 135 82)"/>
+  <text x="82" y="88" font-size="15.5" fill="#222222" transform="rotate(-2 82 88)">1,000 ROWS</text>
+
+  <!-- lots of live rows -->
+  <g stroke="#222222" stroke-width="1.9" stroke-linecap="round">
+    <path d="M76,120 q116,3 252,0"/><path d="M76,136 q116,-3 252,0"/>
+    <path d="M76,152 q116,3 252,0"/><path d="M76,168 q116,-3 252,0"/>
+    <path d="M76,184 q116,3 252,0"/><path d="M76,200 q116,-3 252,0"/>
+    <path d="M76,216 q116,3 252,0"/><path d="M76,232 q116,-3 252,0"/>
+    <path d="M76,248 q116,3 252,0"/>
+  </g>
+  <!-- one struck stripe -->
+  <path d="M76,268 q120,4 252,0" stroke="#222222" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+  <path d="M70,268 q124,7 264,2" stroke="#d64545" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+  <text x="120" y="292" font-size="13" fill="#d64545">100 masked. barely a dent.</text>
+
+  <text x="66" y="342" font-size="15" fill="#222222">900 still alive.</text>
+  <text x="66" y="364" font-size="15" fill="#222222">A LIMIT of 50 never notices.</text>
+
+  <path d="M62,398 l14,16 l26,-30" fill="none" stroke="#3f9e63" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="116" y="416" font-size="16" fill="#3f9e63" transform="rotate(-1 116 416)">test passes. honestly!</text>
+
+  <!-- RIGHT: the data the bug needs -->
+  <text x="452" y="52" font-size="18" fill="#222222" transform="rotate(0.6 452 52)">THE DATA THE BUG NEEDS</text>
+
+  <!-- three small boxes, mostly struck -->
+  <g>
+    <path d="M446,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="#ffffff" stroke="#222222" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="#222222" stroke-width="1.8" stroke-linecap="round">
+      <path d="M458,104 q34,2 72,0"/><path d="M458,118 q34,-2 72,0"/><path d="M458,132 q34,2 72,0"/><path d="M458,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="#d64545" stroke-width="2.4" stroke-linecap="round">
+      <path d="M452,116 q40,5 84,2"/><path d="M452,130 q40,4 84,2"/><path d="M452,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <g>
+    <path d="M566,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="#ffffff" stroke="#222222" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="#222222" stroke-width="1.8" stroke-linecap="round">
+      <path d="M578,104 q34,2 72,0"/><path d="M578,118 q34,-2 72,0"/><path d="M578,132 q34,2 72,0"/><path d="M578,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="#d64545" stroke-width="2.4" stroke-linecap="round">
+      <path d="M572,116 q40,5 84,2"/><path d="M572,130 q40,4 84,2"/><path d="M572,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <g>
+    <path d="M686,84 q46,-4 96,0 q5,38 0,80 q-50,5 -96,0 q-5,-42 0,-80 Z" fill="#ffffff" stroke="#222222" stroke-width="2.8" stroke-linejoin="round"/>
+    <g stroke="#222222" stroke-width="1.8" stroke-linecap="round">
+      <path d="M698,104 q34,2 72,0"/><path d="M698,118 q34,-2 72,0"/><path d="M698,132 q34,2 72,0"/><path d="M698,146 q34,-2 72,0"/>
+    </g>
+    <g stroke="#d64545" stroke-width="2.4" stroke-linecap="round">
+      <path d="M692,116 q40,5 84,2"/><path d="M692,130 q40,4 84,2"/><path d="M692,144 q40,5 84,2"/>
+    </g>
+  </g>
+  <text x="452" y="192" font-size="14" fill="#222222">each label says 55.</text>
+  <text x="452" y="212" font-size="14" fill="#d64545">each really holds ~25.</text>
+
+  <!-- pruner math -->
+  <path d="M452,238 q160,-6 330,0 q6,34 0,70 q-170,6 -330,0 q-6,-36 0,-70 Z"
+        fill="#f6f6f6" stroke="#222222" stroke-width="2.4" stroke-linejoin="round"/>
+  <text x="470" y="266" font-size="14.5" fill="#222222">pruner math: "55 &#8805; 50,</text>
+  <text x="470" y="288" font-size="14.5" fill="#222222">keep one box, done"</text>
+
+  <path d="M610,318 q4,20 0,34" fill="none" stroke="#222222" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M610,352 l-8,-11 M610,352 l9,-10" fill="none" stroke="#222222" stroke-width="2.4" stroke-linecap="round"/>
+
+  <text x="500" y="388" font-size="17" fill="#d64545" transform="rotate(-1 500 388)">25 rows come back.</text>
+  <text x="452" y="428" font-size="14.5" fill="#666666">same code. same query. this shape</text>
+  <text x="452" y="448" font-size="14.5" fill="#666666">was written down nowhere.</text>
+</svg>
+
