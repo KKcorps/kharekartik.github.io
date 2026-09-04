@@ -1,0 +1,12 @@
+@font-face {
+  font-family: 'ToySims Sketch';
+  src: url('./PatrickHand-Regular.woff') format('woff');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+.article-page .prose .wbw-explainer.toysims-workshop svg text,
+.article-page .prose .wbw-explainer.toysims-workshop figcaption {
+  font-family: 'ToySims Sketch', 'Segoe Print', cursive;
+}
