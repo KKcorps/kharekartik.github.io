@@ -1,0 +1,43 @@
+---
+// The parking simulator, built in the InteractiveSims repo and copied here.
+// Its assets live in public/play/parking/assets. This page gives it the
+// same SEO head as the rest of the site and loads the built bundle.
+import simHtml from '../../../data/parking-sim.html?raw';
+import { SITE, absoluteUrl } from '../../../lib/site';
+
+const title = `Play the Grand i10 parking sim | ${SITE.name}`;
+const description =
+	'Drive a real size Grand i10 from the driver seat with working mirrors through an Indian mall basement and a crowded market street. Park, step out and see how close you got.';
+const siteOrigin = Astro.site?.href ?? SITE.origin;
+const canonicalUrl = absoluteUrl('/play/parking/', siteOrigin);
+const socialImageUrl = absoluteUrl(SITE.defaultSocialImage, siteOrigin);
+// the built bundle: its module script, preloads and stylesheets
+const assetTags = (simHtml.match(/<(script|link)[^>]*\/play\/parking\/assets\/[^>]*>(<\/script>)?/g) ?? []).join('\n');
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonicalUrl} />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonicalUrl} />
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content={SITE.name} />
+		<meta property="og:image" content={socialImageUrl} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={title} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={socialImageUrl} />
+		<Fragment set:html={assetTags} />
+	</head>
+	<body>
+		<h1 style="position:absolute;left:-9999px">Parking a Grand i10</h1>
+		<noscript>This sim needs JavaScript to run. <a href="/projects/parking-a-grand-i10/">Read about the project</a>.</noscript>
+	</body>
+</html>
