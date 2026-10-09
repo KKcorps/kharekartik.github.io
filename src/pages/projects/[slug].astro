@@ -1,7 +1,9 @@
 ---
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import ThemeToggle from '../../components/ThemeToggle.astro';
 import { formatMonthYear } from '../../lib/content';
+import { SITE } from '../../lib/site';
 
 export async function getStaticPaths() {
 	const projects = await getCollection('projects', ({ data }) => !data.draft);
@@ -21,42 +23,77 @@ const { Content } = await render(project);
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 ---
 
-<SiteLayout title={project.data.title} description={project.data.summary}>
-	<article class="article-shell article-shell--project">
-		<a class="article-back" href={withBase('/projects/')}>&larr; Back to projects</a>
+<SiteLayout title={project.data.title} description={project.data.summary} hideChrome bodyClass="article-page">
+	<div class="shell">
+		<nav class="article-nav">
+			<a href={withBase('/')} class="logo">kartik khare<span class="cursor-block"></span></a>
+			<div class="article-nav__actions">
+				<a href={withBase('/about/')} class="nav-link">ABOUT</a>
+				<ThemeToggle />
+			</div>
+		</nav>
+
+		<div class="article-gap" aria-hidden="true"></div>
+		<hr />
+
+		<div class="breadcrumb">
+			<span class="user">kartik</span>@site:<a href={withBase('/projects/')}>~/projects</a>/<span class="active">{project.id}</span> $
+		</div>
 
 		<header class="article-header">
-			<p class="eyebrow">Project</p>
-			<h1>{project.data.title}</h1>
-			<p class="article-header__summary">{project.data.summary}</p>
-
-			<div class="project-facts">
-				<div class="project-fact">
-					<p class="project-fact__label">Status</p>
-					<p class="project-fact__value">{project.data.status}</p>
-				</div>
-				<div class="project-fact">
-					<p class="project-fact__label">Started</p>
-					<p class="project-fact__value">{formatMonthYear(project.data.startedOn)}</p>
-				</div>
-				<div class="project-fact">
-					<p class="project-fact__label">Stack</p>
-					<p class="project-fact__value">{project.data.stack.join(', ')}</p>
-				</div>
+			<h1 class="article-title">{project.data.title}</h1>
+			<div class="article-meta">
+				<span>By <a href={withBase(SITE.author.path)} rel="author">{SITE.author.name}</a></span>
+				<span class="sep">/</span>
+				<span>{project.data.status}</span>
+				{
+					project.data.startedOn && (
+						<>
+							<span class="sep">/</span>
+							<span>Started {formatMonthYear(project.data.startedOn)}</span>
+						</>
+					)
+				}
+				{project.data.stack.map((item) => (
+					<>
+						<span class="sep">/</span>
+						<span>{item}</span>
+					</>
+				))}
+				{
+					project.data.demo && (
+						<>
+							<span class="sep">/</span>
+							<a href={project.data.demo}>Live demo</a>
+						</>
+					)
+				}
+				{
+					project.data.repo && (
+						<>
+							<span class="sep">/</span>
+							<a href={project.data.repo}>Repository</a>
+						</>
+					)
+				}
 			</div>
-
-			{
-				(project.data.repo || project.data.demo) && (
-					<div class="article-meta article-meta--links">
-						{project.data.repo && <a href={project.data.repo}>Repository</a>}
-						{project.data.demo && <a href={project.data.demo}>Live demo</a>}
-					</div>
-				)
-			}
 		</header>
 
-		<div class="article-body">
-			<Content />
-		</div>
-	</article>
+		<hr />
+
+		<article class="article-body">
+			<div class="prose">
+				<Content />
+			</div>
+		</article>
+
+		<footer class="article-footer">
+			<nav class="footer-links">
+				<a href={withBase('/projects/')}>ALL PROJECTS</a>
+				<a href="https://medium.com/@kharekartik" target="_blank" rel="noreferrer">MEDIUM</a>
+				<a href="https://github.com/kharekartik" target="_blank" rel="noreferrer">GITHUB</a>
+				<a href="mailto:kharekartik@gmail.com">EMAIL</a>
+			</nav>
+		</footer>
+	</div>
 </SiteLayout>
