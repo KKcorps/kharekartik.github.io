@@ -1,5 +1,6 @@
 ---
 import { getCollection, render, type CollectionEntry } from 'astro:content';
+import AccentCycle from '../../components/AccentCycle.astro';
 import SiteLayout from '../../layouts/SiteLayout.astro';
 import ThemeToggle from '../../components/ThemeToggle.astro';
 import { formatMonthYear } from '../../lib/content';
@@ -21,13 +22,24 @@ interface Props {
 const { project } = Astro.props;
 const { Content } = await render(project);
 const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
+const demoUrl = project.data.demo ? new URL(project.data.demo) : undefined;
+// A demo hosted on this site is embedded by path so it also loads in dev.
+const demoSrc = demoUrl && (demoUrl.origin === SITE.origin ? withBase(demoUrl.pathname) : demoUrl.href);
+const demoHost = demoUrl && `${demoUrl.host}${demoUrl.pathname}`.replace(/\/$/, '');
 ---
 
-<SiteLayout title={project.data.title} description={project.data.summary} hideChrome bodyClass="article-page">
+<SiteLayout
+	title={project.data.title}
+	description={project.data.summary}
+	hideChrome
+	bodyClass="article-page project-page"
+>
+	<AccentCycle />
 	<div class="shell">
 		<nav class="article-nav">
 			<a href={withBase('/')} class="logo">kartik khare<span class="cursor-block"></span></a>
 			<div class="article-nav__actions">
+				<a href={withBase('/projects/')} class="nav-link">PROJECTS</a>
 				<a href={withBase('/about/')} class="nav-link">ABOUT</a>
 				<ThemeToggle />
 			</div>
@@ -43,8 +55,6 @@ const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^
 		<header class="article-header">
 			<h1 class="article-title">{project.data.title}</h1>
 			<div class="article-meta">
-				<span>By <a href={withBase(SITE.author.path)} rel="author">{SITE.author.name}</a></span>
-				<span class="sep">/</span>
 				<span>{project.data.status}</span>
 				{
 					project.data.startedOn && (
@@ -61,14 +71,6 @@ const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^
 					</>
 				))}
 				{
-					project.data.demo && (
-						<>
-							<span class="sep">/</span>
-							<a href={project.data.demo}>Live demo</a>
-						</>
-					)
-				}
-				{
 					project.data.repo && (
 						<>
 							<span class="sep">/</span>
@@ -79,13 +81,33 @@ const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^
 			</div>
 		</header>
 
-		<hr />
-
 		<article class="article-body">
 			<div class="prose">
 				<Content />
 			</div>
 		</article>
+
+		{
+			demoSrc && (
+				<section class="project-demo" aria-label={`${project.data.title} demo`}>
+					<div class="project-demo__bar">
+						<span class="project-demo__dot" aria-hidden="true" />
+						<span class="project-demo__host">{demoHost}</span>
+						<div class="project-demo__actions">
+							<button type="button" data-demo-fullscreen hidden>[ fullscreen ]</button>
+							<a href={demoSrc} target="_blank" rel="noreferrer">[ new tab ]</a>
+						</div>
+					</div>
+					<div class="project-demo__stage" data-demo-stage>
+						<iframe
+							src={demoSrc}
+							title={`${project.data.title} demo`}
+							allow="fullscreen; autoplay; gamepad"
+						/>
+					</div>
+				</section>
+			)
+		}
 
 		<footer class="article-footer">
 			<nav class="footer-links">
@@ -96,4 +118,20 @@ const withBase = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^
 			</nav>
 		</footer>
 	</div>
+
+	<script is:inline>
+		(() => {
+			const button = document.querySelector('[data-demo-fullscreen]');
+			const stage = document.querySelector('[data-demo-stage]');
+
+			if (!(button instanceof HTMLButtonElement) || !(stage instanceof HTMLElement) || !document.fullscreenEnabled) {
+				return;
+			}
+
+			button.hidden = false;
+			button.addEventListener('click', () => {
+				void stage.requestFullscreen();
+			});
+		})();
+	</script>
 </SiteLayout>
