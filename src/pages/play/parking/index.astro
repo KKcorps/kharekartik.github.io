@@ -35,6 +35,15 @@ const assetTags = (simHtml.match(/<(script|link)[^>]*\/play\/parking\/assets\/[^
 		<meta name="twitter:description" content={description} />
 		<meta name="twitter:image" content={socialImageUrl} />
 		<Fragment set:html={assetTags} />
+		<!-- Inside the project page's demo frame the sim's link back to that page would load it into the frame. -->
+		<script is:inline>
+			if (window.self !== window.top) document.documentElement.classList.add('is-embedded');
+		</script>
+		<style is:inline>
+			.is-embedded a[href^='/projects/'] {
+				display: none !important;
+			}
+		</style>
 	</head>
 	<body>
 		<h1 style="position:absolute;left:-9999px">Parking a Grand i10</h1>

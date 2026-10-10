@@ -44,6 +44,15 @@ This repo is an Astro personal site with content-driven writing pages. The notes
   - Markdown tables for compact comparisons
 - If a post feels like a wall of text, add one or two explanatory visuals rather than more sectioning alone.
 
+## Project pages
+
+- Projects live in `src/content/projects/` as Markdown files and show up on `/projects/` on their own.
+- The demo is the page. The body is one short paragraph in an absurd tone about the problem the project solves. Do not write long sections or add screenshots.
+- Set `demo` in the frontmatter and `src/pages/projects/[slug].astro` embeds it in a frame under the paragraph. A demo hosted on this site is embedded by its path.
+- Do not add placeholder projects. Every entry should have something to play.
+- Project pages reuse the `article-page` look with a `project-page` body class. Their styles are the last block in `src/styles/global.css` so they win over the article breakpoints.
+- `src/components/AccentCycle.astro` rotates the accent on each visit and keeps it matched to the light or dark theme.
+
 ## Build and verification
 
 - Use `npm run build` after content, styling, or writing page changes.

@@ -1,0 +1,78 @@
+---
+// Moves the site accent to the next palette on each visit and keeps it
+// matched to the light or dark theme. Same rotation as the home page.
+const accentPalettes = [
+	{ dark: { hex: '#00e5ff', dim: 'rgba(0,229,255,0.12)' }, light: { hex: '#0b82a8', dim: 'rgba(11,130,168,0.14)' } },
+	{ dark: { hex: '#00ffc8', dim: 'rgba(0,255,200,0.1)' }, light: { hex: '#0c8a6a', dim: 'rgba(12,138,106,0.12)' } },
+	{ dark: { hex: '#ff7a1a', dim: 'rgba(255,122,26,0.1)' }, light: { hex: '#cc5a2f', dim: 'rgba(204,90,47,0.12)' } },
+	{ dark: { hex: '#9d7dff', dim: 'rgba(157,125,255,0.1)' }, light: { hex: '#8e4ec6', dim: 'rgba(142,78,198,0.14)' } },
+	{ dark: { hex: '#c5ff47', dim: 'rgba(197,255,71,0.1)' }, light: { hex: '#8b6f16', dim: 'rgba(139,111,22,0.12)' } },
+	{ dark: { hex: '#ff5a6f', dim: 'rgba(255,90,111,0.1)' }, light: { hex: '#bf3f4f', dim: 'rgba(191,63,79,0.12)' } },
+	{ dark: { hex: '#7be7ff', dim: 'rgba(123,231,255,0.1)' }, light: { hex: '#3c7f96', dim: 'rgba(60,127,150,0.12)' } },
+	{ dark: { hex: '#9cff57', dim: 'rgba(156,255,87,0.1)' }, light: { hex: '#658d20', dim: 'rgba(101,141,32,0.12)' } },
+	{ dark: { hex: '#ffb347', dim: 'rgba(255,179,71,0.1)' }, light: { hex: '#a56d16', dim: 'rgba(165,109,22,0.12)' } },
+	{ dark: { hex: '#d17cff', dim: 'rgba(209,124,255,0.1)' }, light: { hex: '#9d56bb', dim: 'rgba(157,86,187,0.12)' } },
+	{ dark: { hex: '#ff8b7b', dim: 'rgba(255,139,123,0.1)' }, light: { hex: '#c66556', dim: 'rgba(198,101,86,0.12)' } },
+	{ dark: { hex: '#52ffc1', dim: 'rgba(82,255,193,0.1)' }, light: { hex: '#1f8b6c', dim: 'rgba(31,139,108,0.12)' } },
+	{ dark: { hex: '#4fa3ff', dim: 'rgba(79,163,255,0.1)' }, light: { hex: '#2b69b3', dim: 'rgba(43,105,179,0.12)' } },
+	{ dark: { hex: '#ff6bb5', dim: 'rgba(255,107,181,0.1)' }, light: { hex: '#b64b80', dim: 'rgba(182,75,128,0.12)' } },
+	{ dark: { hex: '#ffd84d', dim: 'rgba(255,216,77,0.1)' }, light: { hex: '#9f7e10', dim: 'rgba(159,126,16,0.12)' } },
+	{ dark: { hex: '#30e0a1', dim: 'rgba(48,224,161,0.1)' }, light: { hex: '#24775c', dim: 'rgba(36,119,92,0.12)' } },
+	{ dark: { hex: '#7f8cff', dim: 'rgba(127,140,255,0.1)' }, light: { hex: '#5a63b8', dim: 'rgba(90,99,184,0.12)' } },
+	{ dark: { hex: '#ff9e6d', dim: 'rgba(255,158,109,0.1)' }, light: { hex: '#bb7145', dim: 'rgba(187,113,69,0.12)' } },
+	{ dark: { hex: '#64ffd9', dim: 'rgba(100,255,217,0.1)' }, light: { hex: '#298a76', dim: 'rgba(41,138,118,0.12)' } },
+	{ dark: { hex: '#b89cff', dim: 'rgba(184,156,255,0.1)' }, light: { hex: '#7e66bb', dim: 'rgba(126,102,187,0.12)' } },
+	{ dark: { hex: '#ff4d57', dim: 'rgba(255,77,87,0.1)' }, light: { hex: '#a8353c', dim: 'rgba(168,53,60,0.12)' } },
+];
+---
+
+<script is:inline data-accent-palettes={JSON.stringify(accentPalettes)}>
+	(() => {
+		const accentCycleKey = 'home-accent-cycle-index';
+		const accentPaletteKey = 'home-accent-palette';
+		const root = document.documentElement;
+		const accentPalettes = JSON.parse(document.currentScript?.dataset.accentPalettes ?? '[]');
+		const parseHexToRgb = (hex) => {
+			const normalized = hex.replace('#', '').trim();
+			if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+				return null;
+			}
+
+			const red = Number.parseInt(normalized.slice(0, 2), 16);
+			const green = Number.parseInt(normalized.slice(2, 4), 16);
+			const blue = Number.parseInt(normalized.slice(4, 6), 16);
+
+			return `${red} ${green} ${blue}`;
+		};
+
+		if (!Array.isArray(accentPalettes) || accentPalettes.length === 0) {
+			return;
+		}
+
+		const storedCycleIndex = Number.parseInt(localStorage.getItem(accentCycleKey) ?? '-1', 10);
+		const cycleIndex = Number.isFinite(storedCycleIndex)
+			? (storedCycleIndex + 1) % accentPalettes.length
+			: 0;
+		const palette = accentPalettes[cycleIndex];
+
+		const applyAccent = () => {
+			const accent = palette[root.dataset.theme === 'light' ? 'light' : 'dark'];
+			const accentRgb = parseHexToRgb(accent.hex);
+
+			root.style.setProperty('--accent', accent.hex);
+			root.style.setProperty('--accent-dim', accent.dim);
+			if (accentRgb) {
+				root.style.setProperty('--accent-rgb', accentRgb);
+			}
+		};
+
+		localStorage.setItem(accentCycleKey, String(cycleIndex));
+		localStorage.setItem(accentPaletteKey, JSON.stringify(palette));
+		applyAccent();
+
+		new MutationObserver(applyAccent).observe(root, {
+			attributes: true,
+			attributeFilter: ['data-theme'],
+		});
+	})();
+</script>

@@ -3,9 +3,10 @@ name: blog-writer
 description: >
   Write single or multi-part blog posts in Kartik's voice, either personal build logs for
   kharekartik.dev about side projects whose code is on this machine, or technical deep dives for
-  the startree.ai resources blog. Analyzes git history and source, drafts and refines against a
-  scripted style validator, and handles frontmatter, slug and placement. Use when the user wants
-  to write, rewrite or take notes on a blog post.
+  the startree.ai resources blog. Selects a reader and evidence-backed angle, researches source
+  artifacts, develops pitches before drafting and refines with a style validator. Handles
+  frontmatter, slug and placement. Use when the user wants to write, rewrite or take notes on a
+  blog post.
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 ---
 
@@ -13,6 +14,10 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 
 Write technically deep blog posts in Kartik's voice. Each post is a proof-of-work artifact. It
 shows the reader what was built, what broke, what was decided, and why.
+
+Make the consequence legible to someone who has never heard of the project. Reach begins with
+a specific reader's problem and a useful contribution. Preserve the user's chosen subject and
+voice; no workflow can guarantee that a post will trend.
 
 ## The core: track the reader
 
@@ -34,8 +39,9 @@ Writing the post is running that model down the page and serving it at every lin
    FAQ. The reader's internal conversation is a texture that runs through every paragraph, not a
    feature you add in two places.
 2. **Let them arrive before you announce.** Lay out the facts so the reader forms the conclusion
-   one beat before you state it. The punchline never goes in a header, and never in a figure that
-   appears before the question has been asked.
+   one beat before you state it. Section headings and figures must not resolve a question before
+   it has been asked. The article title can name an observed result or contradiction. Establish
+   the stakes early so the reader knows why the investigation matters.
 3. **Never cut the thread.** A sentence that promises something owns the next thing the reader
    sees. No figure, glossary, aside or section break between a setup and its payoff.
 4. **Hand them each word before you spend it.** Name a term and gloss it in plain words at first
@@ -75,25 +81,39 @@ are separate from style.
 
 ---
 
-## 1. Kick-off: ask the user what they want
+## 1. Establish the reader and story
 
-Before writing anything, gather intent. Ask the user:
+For a new post or substantial rewrite, infer the project or system, venue, scope and exclusions
+from the request and available material. Locate the repo for a build log. For an explainer,
+use the relevant primary sources. Establish whether this is standalone or part of a series.
+Ask only for missing information that materially affects the work. A small edit uses the
+existing article's intent and does not restart research or require a new brief.
 
-1. **Which project?** Get the path to the repo on disk (e.g. `~/Documents/Developers/LLM_Experiments/text_2_sql`).
-2. **Single or multi-part?**
-   - **Single:** One self-contained post covering the whole project.
-   - **Multi-part:** A series. Ask which part this is and what scope it covers (a time range of commits, a feature set, or a conceptual phase).
-3. **What angle?** What's the core story, such as a build log, a specific technical challenge, a comparison, a postmortem? Let the user describe it loosely.
-4. **Anything to emphasize or skip?** The user often has specific learnings, decisions, or dead ends they want highlighted, or things they explicitly don't want mentioned.
-5. **What is the single spine, and what is the project's real status?** One investigation or one claim carries a post. A digest of lessons carries none of them. And the frame has to match what the thing actually is. A miss by a tool that gates nothing is an eval reality handed you, not a postmortem.
+Before outlining, write a compact editorial brief. Start with hypotheses and revise them after
+research. Keep it with the working notes, outside the published article:
 
-Do NOT start writing until you have answers to at least (1) and (2). If the user provides all context upfront, skip the questions and proceed.
+- **Reader:** Someone trying to ___ who currently believes ___ and will leave able to ___.
+- **Tension:** What do they expect, what does the evidence reveal and what question connects them?
+- **Contribution:** What can this article establish or explain that the material reviewed does
+  not? Name the artifact or source that supports it and the limits of that evidence.
+- **Consequence:** What decision, behavior or understanding could change for that reader?
+- **Sharing:** Who would they send this to and why? Identify a useful element worth passing on.
+
+One investigation or one claim carries the post. Match the frame to the project's actual status.
+A miss by a tool that gates nothing is an evaluation opportunity, not a production postmortem.
+For an international audience, make the problem understandable across teams without requiring
+familiarity with Kartik, the company or earlier posts. Technical depth can follow that entrance.
+
+When selecting an angle, preparing a release or reviewing reach, read
+[reference/reach-and-learning.md](reference/reach-and-learning.md) for the outside research,
+sharing and publication workflow. Broader reach is an editorial objective, not permission to
+replace a requested subject with whatever is trending.
 
 ---
 
 ## 2. Research the project
 
-Once you know the project path and scope:
+Research only the sources relevant to the chosen scope. For a project on disk:
 
 ### Git history analysis
 ```bash
@@ -115,6 +135,13 @@ result JSON, the fixture manifest with its exact numbers. Run dirs, session logs
 branches usually hold better material than the git log, so go get them. And on any rewrite from
 scratch, re-derive every story fact from the artifacts rather than from the previous draft, which
 by then contains your own inventions (see revision-traps, "Verify inherited claims").
+
+### Establish the contribution
+For a fresh angle, compare the evidence with a small relevant set of existing explanations and
+real reader questions, following the reach reference. Record what is already covered and what
+this post adds. A concrete worked example can be a contribution without being a new invention.
+When browsing or supporting evidence is unavailable, mark the gap instead of claiming novelty.
+If the evidence cannot sustain the pitch, narrow the claim or select another angle within scope.
 
 ### What to extract
 - **Timeline of decisions:** What was built in what order? What was added, then ripped out?
@@ -241,13 +268,20 @@ These are real corrections from past sessions. Study them.
 - **Trim justification scaffolding.** If a decision is supported by 3 sources ("I read in guides... and on X... and leaked prompts confirmed it"), compress to the strongest one. The reader trusts you did the research.
 
 ### Opening
-Start with a storytelling hook that puts the reader in the moment. Not a clinical description of the system, but a personal narrative of how the project started.
+Start with a storytelling hook that puts the reader in the moment. Choose the point where the
+reader's problem becomes tangible: an observed failure, a surprising result or a consequential
+decision. A project's origin earns the opening when it serves that problem. Follow the narrator's
+position; never invent personal experience to make an explainer sound like a build log.
 
 **Bad:** "I was building a custom map-reduce pipeline where Apache Arrow was the intermediate format. Mappers write Arrow files, reducers read them."
 
 **Good:** "So in 2024, I was building a custom map-reduce framework and I needed an intermediate format for shuffling data between mappers and reducers. I picked Arrow because it has maybe the cleanest elevator pitch in all of data infra. I read all that and thought this would be the easy part of the project. Little did I know."
 
 The opening should make the reader feel like they're hearing a story, not reading a spec.
+
+Read the title and opening alone. A reader unfamiliar with the project should be able to name
+the problem, what is at stake and what question the article will resolve. Introduce the system
+through that consequence. Let the explanation unfold without delaying the reason to care.
 
 ### Setup sections
 Setup sections orient the reader on what the project was and why it was hard. Core move 4 applies
@@ -269,7 +303,8 @@ approach. The posts are proof-of-work. They show the thinking, not just the outp
 
 ## 4. Blog post frontmatter
 
-Every post uses this exact frontmatter format:
+New posts for kharekartik.dev use this base frontmatter. Preserve existing publication state and
+dates on edits; use the destination's format for other venues:
 
 ```yaml
 ---
@@ -285,14 +320,15 @@ featured: false
 ---
 ```
 
-### Frontmatter rules
+### Frontmatter rules for new personal-site posts
 - `title`: Provocative or direct. Kartik's style: "WTF Is...", "I Built...", "How I...", "Me vs...". Keep under 80 chars if possible.
 - `summary`: Concrete and specific. Not "A deep dive into X", more like "What happens when you try to build X and everything breaks."
 - `publishedOn`: Use today's date.
 - `draft: true` always on first creation. The user publishes when ready.
 - `tags`: 3-6 lowercase kebab-case tags. Always include `software-engineering` for technical posts. Use `build-in-public` for side project posts. Use `ai` or `llm` for AI projects.
 - `featured: false` by default.
-- For multi-part: include the part number in the title, e.g. "Automating X, Part 1: Subtitle"
+- For a new personal-site series, lead the title with the installment's problem or contribution
+  and include the part number after it. Preserve an established series' naming conventions.
 
 ### File naming and placement
 - Path: `src/content/posts/<slug>.md`
@@ -301,28 +337,35 @@ featured: false
 
 ---
 
-## 5. Title generation
+## 5. Develop the pitch before the outline
 
-Titles are hard. The user is very particular. When proposing titles:
+For a new post or a substantial change of angle, develop a few competing pitches, usually three.
+Each gets a working title and a short opening paragraph grounded in researched evidence. Vary
+the reader's question or the entry into the story, not just adjectives in the same headline.
+For a title-only request, respect the existing article's promise and scope.
 
-1. Generate 5-7 candidates in different styles:
-   - Provocative question: "WTF Does It Take to..."
-   - First-person build log: "I Built X and Here's What Actually Worked"
-   - Direct technical: "Building X From Scratch"
-   - Challenge-framed: "Me vs [Problem]"
-   - Proof-of-work: shows the user did something hard
+Compare the pitches on reader relevance, specificity, supporting evidence and whether the
+opening can deliver the title's promise. Recommend the strongest and explain the choice briefly.
+Proceed with it unless the user has asked to choose first; honor any title already selected.
+If the user requests more title options, generate the requested set.
 
-2. Present all candidates and let the user pick or riff on them.
+Questions, first-person build logs, direct technical titles and challenge frames can all work.
+Use the shape that communicates this story. An observed contradiction such as "My QA Agent
+Wrote the Right Test on the Wrong Data" creates a clear question without exposing every causal
+step. "WTF" and "I Built" are available expressions of voice, not required templates.
 
-3. Common rejection reasons (from past sessions):
-   - "Too long". keep titles punchy
-   - "Too vague". needs to reference the specific thing built
-   - "Too specific". shouldn't read like a README title
-   - "Doesn't seem like my proof of work". needs to show the user DID something
-   - "No reference to [core concept]". the key technical contribution must be in the title
-   - "Who writes blogs with such figures". a precise count like 132 reads as bean counting. An epic round number like 1 billion earns its place
+Common rejection reasons (from past sessions):
 
-Expect 3-5 rounds of title iteration. This is normal.
+- "Too long". keep titles punchy
+- "Too vague". needs to reference the specific thing built
+- "Too specific". shouldn't read like a README title
+- "Doesn't seem like my proof of work". needs to show the user DID something
+- "No reference to [core concept]". the key technical contribution must be in the title
+- A number that measures effort without explaining the reader's stakes. Include figures when
+  they establish a meaningful result or scale; preserve their units, context and accuracy.
+
+Recheck the title after drafting and whenever the central claim changes. Revise the promise to
+match the evidence rather than stretching the article to rescue a headline.
 
 ---
 
@@ -336,8 +379,10 @@ When writing a multi-part series:
 - The user decides scope, so ask if unclear.
 
 ### Cross-references
-- Part 1 intro should mention "This is Part 1 of a series" and briefly describe what the series covers.
-- Later parts open with a one-line callback: "In Part 1, I covered X. This post picks up where that left off."
+- Open with this installment's problem. Place series context and links after the hook, giving
+  only the earlier facts needed here. A new reader should not need to read another post first.
+- Preserve an established venue's conventions. The flight path series uses the recap opening
+  specified in `reference/startree-series.md`.
 - End each part (except the last) with a tease of what comes next.
 - Do NOT duplicate content across parts.
 
@@ -354,24 +399,34 @@ When writing a multi-part series:
 
 ## 7. Drafting workflow
 
-### Phase 1: Research (do NOT write yet)
-1. Read the project repo: key files, architecture, git history.
-2. Use subagents for deep dives into specific areas if the codebase is large.
-3. Build a mental model of: what was built, in what order, what broke, what decisions were interesting.
-4. Present a brief outline (5-8 bullet points) to the user for alignment. Each bullet = a section.
+Use the full workflow for new posts and substantial rewrites. For targeted edits, apply only the
+relevant phases and report existing issues outside scope without expanding the assignment.
+
+### Phase 1: Research and choose the story
+1. Establish the editorial brief from section 1 and research the relevant artifacts and sources.
+2. Verify the event sequence, contribution and limits of the central claim.
+3. Develop the pitches from section 5 before committing to an outline.
+4. Outline the chosen investigation as a sequence of reader questions and supporting evidence.
+   Use as many sections as the story needs. Share the compact brief and outline for visibility;
+   continue into drafting unless the user requested an outline or approval stage only.
 
 ### Phase 2: First draft
 1. Write the full post in one pass.
-2. Target 250-500 lines of markdown (this is Kartik's typical range).
-3. Include real code blocks from the project, not toy examples. Use actual implementation snippets.
-4. Include mermaid diagrams for architecture overviews.
+2. Let the question and evidence determine length. No Markdown line or word quota. Keep the
+   reasoning needed to fulfill the promise; cut material that does not advance it. SVG and code
+   line counts do not measure how much a reader learns.
+3. Follow the narrator's position for code. Use real implementation snippets where they help
+   readers reproduce or understand your work, and prose for machinery they do not need to type.
+4. Use diagrams, tables or experiments where they resolve a reader's question. Make the useful
+   element identified in the brief understandable with its necessary context and limitations.
 5. Leave `<!-- TODO: verify with user -->` comments on any facts you're uncertain about.
 
 ### Phase 3: Style check
 Run `lint.py` from section 10 first and clear every BLOCK. Then do the reader walk from the
 section 9 checklist, with [reference/revision-traps.md](reference/revision-traps.md) open. Issues
 the script cannot see:
-- **Staccato fragments**. the most common violation. Scan for any sentence under 6 words that states a standalone fact. Merge it into the surrounding prose.
+- **Unhelpful fragments**. keep a short sentence when it answers the reader's current question;
+  cut or merge fragments that only pad the rhythm. Length alone is not a violation.
 - **Clipped sentence pairs**. two short sentences where the first states a fact and the second explains it. Merge with "because", "which means", "so", etc.
 - **Declarative openers**. sections starting with "X is Y." instead of "I found that X is Y" or "The thing about X is..."
 - **Clinical/impersonal tone**. "The writer supports..." vs "I tried..." or "Arrow's model is..." vs "Arrow is..."
@@ -393,15 +448,22 @@ The user WILL provide corrections. Expect:
 - **Additions:** "We should also cover X". Research the topic from the codebase and add
 
 ### Phase 5: Title and polish
-- Generate title candidates (see section 5)
+- Check the chosen title, opening and ending against the editorial brief. Adjust the promise if
+  the evidence changed, and confirm the article delivers it.
 - Final proofread for style violations
-- Set frontmatter dates, verify tags
+- Verify frontmatter and tags using section 4, preserving existing publication state on edits
 
 ### Phase 6: Widgets (optional)
 If the post would benefit from interactive visualizations, suggest using the `blog-widget` skill
 to create SVG widgets. Do NOT create widgets yourself. That's a separate skill with its own
 design system. Just identify where in the post a widget would add value and what concept it
 should visualize.
+
+### Phase 7: Publication and learning, when in scope
+For a launch or an explicit reach objective, prepare the relevant publication materials using
+[reference/reach-and-learning.md](reference/reach-and-learning.md). For a performance review,
+use available observations to update editorial hypotheses. A prose edit does not trigger this
+phase. Drafting materials does not authorize posting them, contacting people or scheduling work.
 
 ---
 
@@ -436,6 +498,12 @@ Mechanical rules are not listed here. `lint.py` from section 10 owns them, and i
 zero BLOCK. This list is what a script cannot judge.
 
 - [ ] `lint.py` reports 0 BLOCK, and every REVIEW finding has a stated decision
+- [ ] For a new post or substantial rewrite, the brief names a reader, an evidenced contribution,
+      a consequence and a credible reason to share
+- [ ] The title and opening establish a truthful promise understandable without project history;
+      the article fulfills it and the conclusion stays within the evidence
+- [ ] The useful element can be understood with its context and limitations; no decorative quote
+      or extra visual was added merely to satisfy the sharing check
 - [ ] **Walk the draft as the reader.** At every paragraph, name what they know, what they are
       asking and what they now believe. Check the next line serves it. This one pass covers the
       five core moves: questions answered in place, arrival before announcement, no cut threads,
@@ -445,10 +513,15 @@ zero BLOCK. This list is what a script cannot judge.
 - [ ] Every section explains WHY, not just what
 - [ ] No fact repeated across sections, and no coined phrase leaned on
 - [ ] Nothing orphaned by an edit: no dangling citation, no broken pronoun
-- [ ] Every factual claim about the code verified against the repo, including inherited ones
-- [ ] Frontmatter complete, `draft: true` set, correct path and slug
-- [ ] 250-500 lines of markdown
-- [ ] For multi-part: part number in title and slug, cross-references in place
+- [ ] Every factual claim verified against the relevant repo artifacts or primary sources,
+      including inherited claims; unresolved facts are not presented as established
+- [ ] Frontmatter matches the venue; new personal-site posts start as drafts, while edits preserve
+      existing publication state and dates unless the user requests a change
+- [ ] Length is earned by the reader's question and evidence, with no padding to meet a quota
+- [ ] For multi-part: the installment works independently, with cross-references and naming that
+      follow the series' conventions
+- [ ] When launch or performance work is requested, the reach reference's relevant steps are done
+      and observations are distinguished from hypotheses
 
 ---
 ## 10. Style validator
@@ -460,8 +533,13 @@ python3 .agents/skills/blog-writer/lint.py POST.md
 ```
 
 Run it after the first draft, after every round of the user's notes, and once more before saying
-the post is ready. **BLOCK findings must be zero before you show the user anything.** REVIEW
+the post is ready. **BLOCK findings must be zero before presenting a full article draft.** REVIEW
 findings need a human call, so read each one and say what you decided.
+
+The validator checks article prose, not editorial briefs, pitch notes or this skill's instructions.
+It cannot judge audience demand, originality or sharing value; the editorial and reader walks
+remain necessary. When reviewing an existing article, report findings without silently rewriting
+material outside the requested scope.
 
 It exits 1 while any BLOCK stands, so it works as a gate.
 
